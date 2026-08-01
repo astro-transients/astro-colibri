@@ -180,7 +180,7 @@ PyPI with the same version.
 ## Citation
 
 Please cite the software release using [`CITATION.cff`](CITATION.cff) and the
-Astro-COLIBRI platform papers relevant to your work:
+Astro-COLIBRI platform papers:
 
 - Reichherzer et al. (2023), *Astro-COLIBRI 2 - An Advanced Platform for
   Real-Time Multi-Messenger Discoveries*, Galaxies 11, 22,
@@ -193,4 +193,15 @@ Astro-COLIBRI platform papers relevant to your work:
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+This source-available software is licensed under the
+[PolyForm Noncommercial License 1.0.0](LICENSE). It may be used, modified, and
+redistributed for permitted noncommercial purposes, including use by
+educational institutions and public research organizations.
+
+Commercial use requires a separate written license. Contact
+[Astro-COLIBRI (Fabian Schüssler)](mailto:astro.colibri@gmail.com) and see
+[COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
+
+Use of Astro-COLIBRI hosted services, including the Kafka broker and its data,
+is governed separately by the
+[Astro-COLIBRI Terms of Service](https://astro-colibri.science/tos).
