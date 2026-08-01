@@ -1,0 +1,39 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it and the Astro-COLIBRI platform paper."
+title: "astro-colibri"
+version: "0.1.0"
+abstract: "Python SDK for consuming Astro-COLIBRI real-time astronomical alerts and accessing Astro-COLIBRI services."
+authors:
+  - name: "Astro-COLIBRI team"
+repository-code: "https://github.com/astro-transients/astro-colibri"
+url: "https://astro-colibri.com"
+license: "MIT"
+keywords:
+  - "astronomy"
+  - "multi-messenger astronomy"
+  - "transient astronomy"
+  - "Kafka"
+  - "VOEvent"
+
+preferred-citation:
+  type: article
+  title: "Astro-COLIBRI 2 - An Advanced Platform for Real-Time Multi-Messenger Discoveries"
+  authors:
+    - family-names: "Reichherzer"
+      given-names: "Patrick"
+    - family-names: "Schüssler"
+      given-names: "Fabian"
+    - family-names: "Lefranc"
+      given-names: "Valentin"
+    - family-names: "Becker Tjus"
+      given-names: "Julia"
+    - family-names: "Mourier"
+      given-names: "Jayson"
+    - family-names: "Alkan"
+      given-names: "Atilla Kaan"
+  journal: "Galaxies"
+  year: 2023
+  volume: 11
+  issue: 1
+  doi: "10.3390/galaxies11010022"
+  url: "https://doi.org/10.3390/galaxies11010022"
