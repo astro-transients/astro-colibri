@@ -47,6 +47,19 @@ with Consumer(
 
 ---
 
+## Example script
+
+A minimal, ready-to-run version of the snippet above is provided in
+[`example.py`](example.py). It connects with your credentials, subscribes to
+all topics and prints each alert as it arrives — the fastest way
+to check that your setup works before wiring the SDK into your own pipeline.
+
+```bash
+python example.py
+```
+
+---
+
 ## Available topics
 
 | Topic | Description |
@@ -105,29 +118,64 @@ Cleanly closes the connection (called automatically by the context manager).
 
 ---
 
-## Persisting your read position
+## Your read position
 
-By default, a random UUID is used as the `group_id` suffix: you re-read from
-`start_at` on every restart.
+Your read position (offset) is always persisted. With no `group_id`, the client
+joins the consumer group `<your-username>.default`, so restarting a program
+resumes exactly where it left off: nothing is re-read, nothing is missed.
 
-To persist your progress across sessions, pass a fixed `group_id`. The client
-automatically prefixes it with your Kafka username to satisfy the per-user ACL:
+`start_at` only applies the **first** time a given consumer group connects. On
+every later run the stored offset wins, so changing `start_at` on an existing
+group has no effect. To deliberately re-read the retention window, use a
+`group_id` you have never used before.
+
+The client automatically prefixes `group_id` with your Kafka username to satisfy
+the per-user ACL, so `group_id="my-program-v1"` becomes the Kafka group
+`your-username.my-program-v1`.
 
 ```python
 consumer = Consumer(
     username="your-username",
     password="your-password",
-    group_id="my-program-v1",   # Kafka remembers where you left off
-    start_at="latest",          # Only read new alerts going forward
+    group_id="my-program-v1",   # its own independent read position
+    start_at="latest",          # only applies on this group's very first run
 )
 ```
+
+---
+
+## Running several scripts with the same credentials
+
+One set of credentials can drive as many scripts as you like, but **give each
+script its own `group_id`**. Consumers that share a group are treated by Kafka
+as one logical reader and have the partitions divided between them, so each
+script would receive only a slice of the stream rather than every alert.
+
+```python
+# ingest.py
+consumer = Consumer(username="alice", password="...", group_id="ingest")
+
+# alerting.py
+consumer = Consumer(username="alice", password="...", group_id="alerting")
+```
+
+Each group keeps its own independent read position, so the two scripts can run
+at different speeds, restart independently, and both still see the full alert
+stream.
+
+Leaving `group_id` unset in more than one script is the case to avoid: they all
+land in `<your-username>.default` and silently share the stream between them.
+
+Running the *same* script as several replicas is the one case where sharing a
+`group_id` is what you want: that is how you spread the load, and Kafka
+rebalances the partitions across the replicas automatically.
 
 ---
 
 ## Testing locally against your own broker
 
 If you're running the Astro-Colibri broker stack locally (see the
-broker's `DEV.md`), point the client at it directly:
+broker's `QUICKSTART.md`), point the client at it directly:
 
 ```python
 consumer = Consumer(

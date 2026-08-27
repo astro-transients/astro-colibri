@@ -1,4 +1,5 @@
 cff-version: 1.2.0
+type: software
 message: "If you use this software, please cite it and the Astro-COLIBRI platform paper."
 title: "astro-colibri"
 version: "0.1.0"

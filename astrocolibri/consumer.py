@@ -11,7 +11,6 @@ this package — there is no Producer here, and there never will be.
 
 from __future__ import annotations
 
-import uuid
 from typing import Any, Dict, Generator, List, Optional
 
 from confluent_kafka import Consumer as _ConfluentConsumer
@@ -73,6 +72,10 @@ class Consumer:
     #: Astro-Colibri official broker address.
     DEFAULT_BROKER_URL: str = "broker.astro-colibri.science:9092"
 
+    #: Group name used when no ``group_id`` is given, appended to the
+    #: username prefix (e.g. ``"alice.default"``).
+    DEFAULT_GROUP_SUFFIX: str = "default"
+
     def __init__(
         self,
         username: str,
@@ -97,13 +100,17 @@ class Consumer:
                 broker (``broker.astro-colibri.science:9092``). For local testing
                 against your own broker: ``"localhost:9092"``.
             group_id:
-                Kafka consumer group ID.
+                Kafka consumer group ID. Prefixed with your username to
+                satisfy the per-user ACL, so ``"my-pipeline"`` becomes
+                ``"alice.my-pipeline"``.
 
-                - If provided, Kafka remembers your read position (offset)
-                  across sessions: you resume exactly where you left off.
-                - If omitted (default), a random UUID is generated on every
-                  startup: you re-read from ``start_at`` every time, with
-                  no progress persisted.
+                - Omitted (default): the group ``"<username>.default"`` is
+                  used. Kafka remembers your read position (offset) across
+                  sessions, so you resume exactly where you left off.
+                - Running several scripts on the same credentials: give each
+                  one its own ``group_id``. Consumers sharing a group have the
+                  partitions split between them, so each would otherwise
+                  receive only part of the stream.
             start_at:
                 Starting position for a **new** ``group_id``.
 
@@ -147,17 +154,15 @@ class Consumer:
                 f"start_at must be 'earliest' or 'latest', got: '{start_at}'."
             )
 
-        # Kafka ACLs isolate each account under a username-derived group
-        # prefix. No group_id still means no offset persistence because the
-        # random suffix changes on every startup.
-        self._persistent = group_id is not None
         group_prefix = f"{username}."
-        group_suffix = group_id or str(uuid.uuid4())
-        resolved_group_id = (
-            group_suffix
-            if group_suffix.startswith(group_prefix)
-            else f"{group_prefix}{group_suffix}"
-        )
+        if group_id is None:
+            resolved_group_id = f"{group_prefix}{self.DEFAULT_GROUP_SUFFIX}"
+        else:
+            resolved_group_id = (
+                group_id
+                if group_id.startswith(group_prefix)
+                else f"{group_prefix}{group_id}"
+            )
 
         base_config: Dict[str, Any] = {
             "bootstrap.servers": broker_url or self.DEFAULT_BROKER_URL,
@@ -167,7 +172,7 @@ class Consumer:
             "sasl.password": password,
             "group.id": resolved_group_id,
             "auto.offset.reset": start_at,
-            "enable.auto.commit": self._persistent,
+            "enable.auto.commit": True,
             "auto.commit.interval.ms": 5000,
             "session.timeout.ms": 30_000,
             "heartbeat.interval.ms": 10_000,
@@ -318,8 +323,8 @@ class Consumer:
         """
         Cleanly close the consumer and release resources.
 
-        Commits any pending offsets (if ``group_id`` is persistent) and
-        leaves the consumer group.
+        Commits any pending offsets and leaves the consumer group, so the
+        next run of this ``group_id`` resumes from here.
         """
         self._consumer.close()
 

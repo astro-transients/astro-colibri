@@ -15,8 +15,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from confluent_kafka import KafkaException
+
 from astrocolibri import Consumer, TOPICS
 from astrocolibri.exceptions import (
+    AstrocolibriAuthError,
     AstrocolibriConfigError,
     AstrocolibriKafkaError,
 )
@@ -98,15 +101,27 @@ class TestConsumerInit:
         cfg = mock_confluent.call_args[0][0]
         assert cfg["group.id"] == "u.my-group"
 
-    def test_group_id_random_when_none(self, mock_confluent):
+    def test_group_id_stable_when_none(self, mock_confluent):
+        # No group_id means the account-derived default group, identical
+        # across restarts, so offsets commit and the read position persists.
         Consumer(username="u", password="p")
         Consumer(username="u", password="p")
         cfg1 = mock_confluent.call_args_list[-2][0][0]
         cfg2 = mock_confluent.call_args_list[-1][0][0]
-        assert cfg1["group.id"].startswith("u.")
-        assert cfg2["group.id"].startswith("u.")
+        assert cfg1["group.id"] == "u.default"
+        assert cfg2["group.id"] == "u.default"
+        assert cfg1["enable.auto.commit"] is True
+
+    def test_separate_group_ids_do_not_collide(self, mock_confluent):
+        # Two scripts on the same credentials each need their own group,
+        # otherwise Kafka splits the partitions between them.
+        Consumer(username="u", password="p", group_id="script-a")
+        Consumer(username="u", password="p", group_id="script-b")
+        cfg1 = mock_confluent.call_args_list[-2][0][0]
+        cfg2 = mock_confluent.call_args_list[-1][0][0]
+        assert cfg1["group.id"] == "u.script-a"
+        assert cfg2["group.id"] == "u.script-b"
         assert cfg1["group.id"] != cfg2["group.id"]
-        assert cfg1["enable.auto.commit"] is False
 
     def test_start_at_earliest(self, mock_confluent):
         Consumer(username="u", password="p", start_at="earliest")
@@ -137,6 +152,39 @@ class TestConsumerInit:
         cfg = mock_confluent.call_args[0][0]
         assert cfg["group.id"] == "u.science"
 
+    def test_extra_config_cannot_override_credentials(self, mock_confluent):
+        # config= is a documented escape hatch for tuning, but it must never
+        # be able to swap the identity the client authenticates with.
+        Consumer(
+            username="u",
+            password="p",
+            config={
+                "sasl.username": "someone-else",
+                "sasl.password": "their-password",
+                "sasl.mechanism": "PLAIN",
+            },
+        )
+        cfg = mock_confluent.call_args[0][0]
+        assert cfg["sasl.username"] == "u"
+        assert cfg["sasl.password"] == "p"
+        assert cfg["sasl.mechanism"] == "SCRAM-SHA-512"
+
+    def test_auth_error_when_broker_refuses_connection(self, mock_confluent):
+        # Bad credentials are the most common user-facing failure, so the
+        # confluent exception must surface as the documented SDK error.
+        mock_confluent.side_effect = KafkaException("authentication failed")
+        with pytest.raises(AstrocolibriAuthError) as excinfo:
+            Consumer(username="u", password="wrong")
+        # The message should name the broker the client actually tried.
+        assert Consumer.DEFAULT_BROKER_URL in str(excinfo.value)
+
+    def test_auth_error_is_an_astrocolibri_error(self, mock_confluent):
+        from astrocolibri import AstrocolibriError
+
+        mock_confluent.side_effect = KafkaException("nope")
+        with pytest.raises(AstrocolibriError):
+            Consumer(username="u", password="wrong")
+
 
 class TestConsumerSubscribe:
     def test_subscribe_single_topic(self, consumer):
@@ -160,6 +208,24 @@ class TestConsumerSubscribe:
             ["astrocolibri.all.JSON"],
             on_assign=on_assign,
             on_revoke=on_revoke,
+        )
+
+    def test_subscribe_with_on_lost(self, consumer):
+        # on_lost fires when partitions are taken away involuntarily, which is
+        # how a consumer notices it dropped out of the group.
+        on_lost = MagicMock()
+        consumer.subscribe(["astrocolibri.all.JSON"], on_lost=on_lost)
+        consumer._consumer.subscribe.assert_called_once_with(
+            ["astrocolibri.all.JSON"],
+            on_lost=on_lost,
+        )
+
+    def test_subscribe_omits_callbacks_not_given(self, consumer):
+        # confluent-kafka rejects a None callback, so unset ones must not be
+        # forwarded at all.
+        consumer.subscribe(["astrocolibri.all.JSON"])
+        consumer._consumer.subscribe.assert_called_once_with(
+            ["astrocolibri.all.JSON"],
         )
 
 

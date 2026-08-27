@@ -9,7 +9,7 @@ description = "Python SDK for Astro-COLIBRI alerts and services"
 readme = "README.md"
 license = "PolyForm-Noncommercial-1.0.0"
 license-files = ["LICENSE", "COMMERCIAL-LICENSE.md"]
-authors = [{ name = "Astro-Colibri Team", email = "contact@astrocolibri.org" }]
+authors = [{ name = "Astro-Colibri Team", email = "astro.colibri@gmail.com" }]
 requires-python = ">=3.9"
 
 dependencies = ["confluent-kafka>=2.3.0"]
@@ -25,15 +25,16 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Operating System :: OS Independent",
 ]
 
 [project.optional-dependencies]
-dev = ["build>=1.2", "pytest>=7.4", "pytest-cov>=4.1", "twine>=5"]
+dev = ["build>=1.2", "pytest>=7.4", "pytest-cov>=4.1", "requests>=2.31", "twine>=5"]
 
 [project.urls]
 Homepage = "https://astro-colibri.com"
-Documentation = "https://astro-colibri.science"
+Documentation = "https://astro-colibri.science/brokerdoc"
 Repository = "https://github.com/astro-transients/astro-colibri"
 "Bug Tracker" = "https://github.com/astro-transients/astro-colibri/issues"
 
@@ -44,6 +45,9 @@ include = ["astrocolibri*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short"
+markers = [
+    "integration: hits the real production broker and API; needs credentials, skipped without them",
+]
 
 [tool.coverage.run]
 source = ["astrocolibri"]
