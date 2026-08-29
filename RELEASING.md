@@ -7,8 +7,8 @@ PyPI, so no long-lived PyPI API token is stored in the repository.
 The workflow publishes both normal and pre-releases. Publishing a GitHub
 Release is therefore the final, irreversible release action.
 
-The GitHub repository may remain private. The wheel, source distribution, and
-their packaged source code become public when they are uploaded to PyPI.
+The GitHub repository is public. The wheel, source distribution, and their
+packaged source code also become public when they are uploaded to PyPI.
 
 ## One-time setup
 
@@ -16,7 +16,7 @@ Complete these steps only when the first PyPI publication is ready.
 
 1. Create a PyPI account, verify its email address, enable two-factor
    authentication, and store the recovery codes securely.
-2. Confirm that GitHub Actions are enabled for the private
+2. Confirm that GitHub Actions are enabled for the
    `astro-transients/astro-colibri` repository. If the organization restricts
    third-party actions, allow `pypa/gh-action-pypi-publish`.
 3. In the GitHub repository, open **Settings > Environments**, create an

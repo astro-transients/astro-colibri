@@ -197,34 +197,6 @@ pytest tests/ -v
 
 ---
 
-## TestPyPI release
-
-Build and validate a release from a clean checkout:
-
-```bash
-python -m pip install -e ".[dev]"
-python -m build
-python -m twine check dist/*
-python -m twine upload --repository testpypi dist/*
-```
-
-Test the uploaded distribution in a fresh environment. The additional PyPI
-index supplies runtime dependencies that may not be mirrored on TestPyPI:
-
-```bash
-python -m pip install \
-  --index-url https://test.pypi.org/simple/ \
-  --extra-index-url https://pypi.org/simple/ \
-  astro-colibri==0.1.0
-```
-
-Neither index allows an uploaded filename to be replaced. If a successful test
-upload needs changes, increment the version before rebuilding. The exact
-artifacts validated on TestPyPI can subsequently be uploaded to production
-PyPI with the same version.
-
----
-
 ## Citation
 
 Please cite the software release using [`CITATION.cff`](CITATION.cff) and the
