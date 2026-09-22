@@ -4,16 +4,17 @@ tests/test_package.py
 Public-surface and packaging checks for the astro-colibri SDK.
 
 These guard the parts a published library cannot get wrong quietly: the
-exported names, the advertised topic list, the version users see, and the
-promise that no Producer is reachable from this package.
+exported names, the advertised topic list, the version users see, the
+promise that no Producer is reachable from this package, and the fixed
+production host of the API client.
 """
 
 from __future__ import annotations
 
+import builtins
+import inspect
 import re
 from pathlib import Path
-
-import pytest
 
 import astrocolibri
 
@@ -36,7 +37,13 @@ class TestPublicSurface:
             assert hasattr(astrocolibri, name), f"__all__ exports missing {name}"
 
     def test_documented_entry_points_are_exported(self):
-        for name in ("Consumer", "TOPICS", "__version__"):
+        for name in (
+            "Consumer",
+            "Client",
+            "TOPICS",
+            "OPTIONAL_PARAMETERS",
+            "__version__",
+        ):
             assert name in astrocolibri.__all__
 
     def test_no_producer_is_reachable(self):
@@ -75,23 +82,72 @@ class TestExceptionHierarchy:
     def test_every_error_subclasses_the_base(self):
         # The docs promise a single `except AstrocolibriError` catches all.
         from astrocolibri import (
+            AstrocolibriAPIError,
             AstrocolibriAuthError,
             AstrocolibriConfigError,
+            AstrocolibriDecodeError,
             AstrocolibriError,
             AstrocolibriKafkaError,
+            AstrocolibriNotFoundError,
+            AstrocolibriRateLimitError,
+            AstrocolibriTransportError,
         )
 
         for exc in (
             AstrocolibriAuthError,
             AstrocolibriConfigError,
             AstrocolibriKafkaError,
+            AstrocolibriDecodeError,
+            AstrocolibriAPIError,
+            AstrocolibriNotFoundError,
+            AstrocolibriRateLimitError,
+            AstrocolibriTransportError,
         ):
             assert issubclass(exc, AstrocolibriError)
+
+    def test_specific_api_errors_are_api_errors(self):
+        # `except AstrocolibriAPIError` must also catch a miss or a quota stop.
+        from astrocolibri import (
+            AstrocolibriAPIError,
+            AstrocolibriNotFoundError,
+            AstrocolibriRateLimitError,
+        )
+
+        assert issubclass(AstrocolibriNotFoundError, AstrocolibriAPIError)
+        assert issubclass(AstrocolibriRateLimitError, AstrocolibriAPIError)
 
     def test_base_error_subclasses_exception(self):
         from astrocolibri import AstrocolibriError
 
         assert issubclass(AstrocolibriError, Exception)
+
+
+class TestClientSurface:
+    def test_api_url_is_the_production_https_host(self):
+        assert astrocolibri.Client.API_URL == "https://astro-colibri.science"
+
+    def test_host_cannot_be_overridden(self):
+        # The public SDK only talks to production. Encoded like the missing
+        # Producer: a base_url parameter would be an invitation to point the
+        # SDK at unofficial endpoints.
+        parameters = set(inspect.signature(astrocolibri.Client.__init__).parameters)
+        assert not parameters & {"base_url", "url", "host", "api_url", "endpoint"}
+
+    def test_no_public_parameter_shadows_a_builtin(self):
+        # `filter=` or `format=` would shadow builtins inside user code that
+        # forwards keyword arguments.
+        shadowed = []
+        for name, method in inspect.getmembers(astrocolibri.Client, inspect.isfunction):
+            if name.startswith("_") and name != "__init__":
+                continue
+            for parameter in inspect.signature(method).parameters:
+                if parameter != "self" and hasattr(builtins, parameter):
+                    shadowed.append(f"{name}({parameter}=)")
+        assert shadowed == []
+
+    def test_optional_parameters_match_the_api(self):
+        # The API accepts exactly these; anything else is rejected client-side.
+        assert astrocolibri.OPTIONAL_PARAMETERS == ("gw_contours", "archive")
 
 
 class TestVersion:

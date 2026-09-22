@@ -11,16 +11,20 @@ this package — there is no Producer here, and there never will be.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Generator, List, Optional
+import logging
+from typing import Any, Dict, Generator, List, Optional, Union
 
 from confluent_kafka import Consumer as _ConfluentConsumer
 from confluent_kafka import KafkaError, KafkaException, Message
 
+from .alert import Alert
 from .exceptions import (
     AstrocolibriAuthError,
     AstrocolibriConfigError,
     AstrocolibriKafkaError,
 )
+
+logger = logging.getLogger(__name__)
 
 # Topics available on the official broker
 TOPICS = [
@@ -30,6 +34,21 @@ TOPICS = [
     "astrocolibri.important.VOEvent",
     "astrocolibri.heartbeat",
 ]
+
+# Kafka conditions that a long-running consumer is expected to ride out:
+# librdkafka reconnects and rejoins on its own, so they are logged and
+# skipped instead of ending the stream.
+_TRANSIENT_ERROR_CODES = {
+    code
+    for code in (
+        KafkaError._PARTITION_EOF,
+        KafkaError._TRANSPORT,
+        KafkaError._ALL_BROKERS_DOWN,
+        KafkaError._TIMED_OUT,
+        getattr(KafkaError, "_MAX_POLL_EXCEEDED", None),
+    )
+    if code is not None
+}
 
 
 class Consumer:
@@ -43,7 +62,11 @@ class Consumer:
         This library does **not** allow publishing alerts. Publishing is
         restricted to the Astro-Colibri infrastructure itself.
 
-    Quick start::
+    Payloads arrive decoded: :meth:`Alert.value` returns a ``dict`` on the
+    JSON topics and the XML document as ``str`` on the VOEvent topics, never
+    raw bytes.
+
+    Quick start — listen continuously::
 
         from astrocolibri import Consumer
 
@@ -53,19 +76,16 @@ class Consumer:
         ) as consumer:
             consumer.subscribe(["astrocolibri.all.JSON"])
 
-            for message in consumer.consume(timeout=30):
-                print(message.value())
+            # Runs forever, waiting for the next alert.
+            for alert in consumer.consume():
+                data = alert.value()
+                print(data["id"], data["ra"], data["dec"])
 
-    Infinite loop (blocking)::
-
-        for message in consumer.consume():   # timeout=-1 by default
-            handle(message.value())
-
-    With a timeout (non-blocking)::
+    Batch mode — return control between bursts of alerts::
 
         while True:
-            for message in consumer.consume(timeout=5.0):
-                handle(message.value())
+            for alert in consumer.consume(timeout=5.0):
+                handle(alert.value())
             do_other_work()
     """
 
@@ -85,6 +105,8 @@ class Consumer:
         group_id: Optional[str] = None,
         start_at: str = "earliest",
         security_protocol: str = "SASL_SSL",
+        decode: bool = True,
+        poll_interval: float = 1.0,
         config: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
@@ -125,6 +147,21 @@ class Consumer:
                   official public broker.
                 - ``"SASL_PLAINTEXT"``: intended only for a trusted local
                   development broker.
+            decode:
+                - ``True`` (default): :meth:`consume` yields
+                  :class:`~astrocolibri.alert.Alert` objects whose
+                  ``value()`` is the decoded payload — a ``dict`` on the
+                  JSON topics, the XML document as ``str`` on the VOEvent
+                  topics.
+                - ``False``: yields the raw
+                  :class:`confluent_kafka.Message`, whose ``value()`` is
+                  ``bytes``. For code that decodes the payload itself.
+            poll_interval:
+                Seconds spent in each internal poll while :meth:`consume`
+                waits for the next alert. It does not change what you
+                receive; it only decides how quickly a blocking
+                ``consume()`` notices Ctrl-C. Lower it for a snappier
+                shutdown, raise it to poll the broker less often.
             config:
                 Extra confluent-kafka options. Authentication and consumer
                 group identity remain managed by this client.
@@ -153,6 +190,14 @@ class Consumer:
             raise AstrocolibriConfigError(
                 f"start_at must be 'earliest' or 'latest', got: '{start_at}'."
             )
+
+        if poll_interval <= 0:
+            raise AstrocolibriConfigError(
+                f"poll_interval must be > 0 seconds, got: {poll_interval}."
+            )
+
+        self._decode = decode
+        self._poll_interval = poll_interval
 
         group_prefix = f"{username}."
         if group_id is None:
@@ -246,76 +291,119 @@ class Consumer:
         self,
         num_messages: int = 1,
         timeout: float = -1,
-    ) -> Generator[Message, None, None]:
+    ) -> Generator[Union[Alert, Message], None, None]:
         """
-        Consume messages from the subscribed topics.
+        Consume alerts from the subscribed topics, one at a time.
 
-        Yields messages one at a time. ``_PARTITION_EOF`` errors (end of
-        partition) are silently ignored; any other Kafka error raises
-        :exc:`AstrocolibriKafkaError`.
+        By default this never ends: it keeps waiting for the next alert, so
+        a single ``for`` loop is a complete listener. Transient Kafka
+        conditions (end of partition, a broker connection dropping, the
+        group rebalancing) are logged and skipped rather than ending the
+        stream; only an unrecoverable error raises.
 
         Args:
             num_messages:
                 Maximum number of messages fetched per internal batch.
                 Does not affect the stream itself: the generator always
-                yields one message at a time.
+                yields one alert at a time.
             timeout:
-                - ``-1`` (default): blocks indefinitely until the next
-                  message arrives. The generator never terminates on its own.
-                - ``> 0``: returns after ``timeout`` seconds with no
-                  message. The generator terminates — useful for periodic
-                  processing between batches.
+                - ``-1`` (default): listen forever. The generator never
+                  terminates on its own, and internally polls the broker in
+                  ``poll_interval`` slices so Ctrl-C stays responsive.
+                - ``> 0``: stop after ``timeout`` seconds without a new
+                  alert. Use this when your program has other work to do
+                  between bursts — wrap it in ``while True:``.
 
         Yields:
-            :class:`confluent_kafka.Message`
+            :class:`~astrocolibri.alert.Alert` — payload already decoded:
 
-            Useful methods:
+            - ``alert.value()``  → ``dict`` on a JSON topic, XML ``str`` on
+              a VOEvent topic
+            - ``alert.text()``   → ``str`` — payload as published
+            - ``alert.json()``   → parsed JSON, whatever the topic
+            - ``alert.key()``    → ``str | None`` — the event id
+            - ``alert.headers()``→ ``dict[str, str]`` — broker metadata
+            - ``alert.format``   → ``"json"`` | ``"voevent"``
+            - ``alert.raw``      → ``bytes`` — undecoded payload
+            - ``alert.topic()`` / ``.partition()`` / ``.offset()`` /
+              ``.timestamp()``
 
-            - ``message.value()`` → ``bytes`` — alert payload
-            - ``message.key()``   → ``bytes | None`` — message key
-            - ``message.topic()`` → ``str``
-            - ``message.partition()`` → ``int``
-            - ``message.offset()``    → ``int``
-            - ``message.timestamp()`` → ``(type, timestamp_ms)``
+            With ``decode=False`` on the Consumer, the raw
+            :class:`confluent_kafka.Message` is yielded instead and
+            ``value()`` is ``bytes``.
 
         Raises:
             AstrocolibriKafkaError: On an unrecoverable Kafka error.
 
         Examples:
 
-            Infinite loop (blocks until the next message)::
+            Listen continuously — the normal case::
 
-                for message in consumer.consume():
-                    data = json.loads(message.value())
-                    print(data)
+                for alert in consumer.consume():
+                    data = alert.value()
+                    print(data["id"], data["type"])
 
-            With a timeout (yields control between batches)::
+            Batch mode, to do other work between alerts::
 
                 while True:
-                    for message in consumer.consume(timeout=5.0):
-                        handle(message)
+                    for alert in consumer.consume(timeout=5.0):
+                        handle(alert.value())
                     check_app_state()
         """
+        listen_forever = timeout is None or timeout < 0
+        poll_timeout = self._poll_interval if listen_forever else timeout
+
         while True:
             msgs = self._consumer.consume(
                 num_messages=num_messages,
-                timeout=timeout,
+                timeout=poll_timeout,
             )
             if not msgs:
+                if listen_forever:
+                    # Nothing this slice; keep waiting for the next alert.
+                    continue
                 # Timeout elapsed with no message → stop the generator
                 return
 
             for msg in msgs:
                 if msg.error():
-                    code = msg.error().code()
-                    if code == KafkaError._PARTITION_EOF:
-                        # End of partition: expected, keep going
+                    if self._is_transient(msg):
                         continue
                     raise AstrocolibriKafkaError(
                         f"Kafka error on {msg.topic()} "
                         f"[partition={msg.partition()}]: {msg.error()}"
                     )
-                yield msg
+                yield Alert(msg) if self._decode else msg
+
+    @staticmethod
+    def _is_transient(msg: Message) -> bool:
+        """Whether the error on `msg` is one the client recovers from itself."""
+        error = msg.error()
+        code = error.code()
+
+        if code == KafkaError._PARTITION_EOF:
+            # End of partition: expected on an idle topic, not worth a log line.
+            return True
+
+        retriable = False
+        if code in _TRANSIENT_ERROR_CODES:
+            retriable = True
+        else:
+            # librdkafka classifies the error itself; trust it when it does.
+            try:
+                retriable = bool(error.retriable())
+            except (AttributeError, TypeError):  # pragma: no cover - old clients
+                retriable = False
+
+        if retriable:
+            logger.warning(
+                "Transient Kafka condition on %s [partition=%s]: %s — "
+                "the client recovers on its own, continuing to listen",
+                msg.topic(),
+                msg.partition(),
+                error,
+            )
+        return retriable
 
     # ── Lifecycle ────────────────────────────────────────────────────────────
 

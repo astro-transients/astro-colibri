@@ -11,18 +11,18 @@ Run:
 
 from __future__ import annotations
 
+import itertools
+import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
-
-from confluent_kafka import KafkaException
-
-from astrocolibri import Consumer, TOPICS
+from astrocolibri import TOPICS, Alert, Consumer
 from astrocolibri.exceptions import (
     AstrocolibriAuthError,
     AstrocolibriConfigError,
     AstrocolibriKafkaError,
 )
+from confluent_kafka import KafkaException
 
 
 @pytest.fixture
@@ -42,19 +42,21 @@ def consumer(mock_confluent):
     )
 
 
-def make_message(value: bytes = b"alert", error=None) -> MagicMock:
+def make_message(value: bytes = b'{"id": "AC-001"}', error=None) -> MagicMock:
     msg = MagicMock()
     msg.value.return_value = value
     msg.error.return_value = error
     msg.topic.return_value = "astrocolibri.all.JSON"
     msg.partition.return_value = 0
     msg.offset.return_value = 42
+    msg.headers.return_value = None
     return msg
 
 
-def make_kafka_error(code: int) -> MagicMock:
+def make_kafka_error(code: int, retriable: bool = False) -> MagicMock:
     err = MagicMock()
     err.code.return_value = code
+    err.retriable.return_value = retriable
     return err
 
 
@@ -230,18 +232,32 @@ class TestConsumerSubscribe:
 
 
 class TestConsumerConsume:
-    def test_consume_yields_message(self, consumer):
+    def test_consume_yields_decoded_alerts(self, consumer):
         msg = make_message(b'{"id": "AC-001"}')
         consumer._consumer.consume.side_effect = [[msg], []]
         result = list(consumer.consume(timeout=1.0))
-        assert result == [msg]
+        assert len(result) == 1
+        alert = result[0]
+        # What the user gets is the alert, not b'{"id": "AC-001"}'.
+        assert isinstance(alert, Alert)
+        assert alert.value() == {"id": "AC-001"}
+        assert alert.message is msg
 
     def test_consume_yields_multiple_messages(self, consumer):
-        msg1 = make_message(b"alert-1")
-        msg2 = make_message(b"alert-2")
+        msg1 = make_message(b'{"id": "a"}')
+        msg2 = make_message(b'{"id": "b"}')
         consumer._consumer.consume.side_effect = [[msg1, msg2], []]
         result = list(consumer.consume(num_messages=2, timeout=1.0))
-        assert result == [msg1, msg2]
+        assert [a.value() for a in result] == [{"id": "a"}, {"id": "b"}]
+
+    def test_decode_false_yields_the_raw_message(self, mock_confluent):
+        # Documented escape hatch for code that decodes the payload itself.
+        c = Consumer(username="u", password="p", decode=False)
+        msg = make_message()
+        c._consumer.consume.side_effect = [[msg], []]
+        result = list(c.consume(timeout=1.0))
+        assert result == [msg]
+        assert result[0].value() == b'{"id": "AC-001"}'
 
     def test_consume_stops_on_empty(self, consumer):
         consumer._consumer.consume.return_value = []
@@ -253,11 +269,11 @@ class TestConsumerConsume:
 
         eof_error = make_kafka_error(KafkaError._PARTITION_EOF)
         eof_msg = make_message(error=eof_error)
-        real_msg = make_message(b"real-alert")
+        real_msg = make_message(b'{"id": "real"}')
 
         consumer._consumer.consume.side_effect = [[eof_msg, real_msg], []]
         result = list(consumer.consume(timeout=1.0))
-        assert result == [real_msg]
+        assert [a.message for a in result] == [real_msg]
 
     def test_consume_raises_on_kafka_error(self, consumer):
         from confluent_kafka import KafkaError
@@ -273,6 +289,80 @@ class TestConsumerConsume:
         consumer._consumer.consume.return_value = []
         list(consumer.consume(num_messages=5, timeout=2.5))
         consumer._consumer.consume.assert_called_once_with(num_messages=5, timeout=2.5)
+
+
+class TestContinuousListening:
+    """The default consume() is a listener, not a one-shot fetch."""
+
+    def test_default_consume_keeps_waiting_through_idle_polls(self, consumer):
+        # A quiet stretch on the broker must not end the loop: the two empty
+        # polls here stand for hours with no alert.
+        msg1 = make_message(b'{"id": "a"}')
+        msg2 = make_message(b'{"id": "b"}')
+        consumer._consumer.consume.side_effect = [[msg1], [], [], [msg2]]
+
+        received = list(itertools.islice(consumer.consume(), 2))
+
+        assert [a.value()["id"] for a in received] == ["a", "b"]
+        assert consumer._consumer.consume.call_count == 4
+
+    def test_default_consume_polls_in_slices_not_one_blocking_call(self, consumer):
+        # Blocking librdkafka forever would swallow Ctrl-C, so the infinite
+        # form polls in poll_interval slices instead of passing timeout=-1 on.
+        consumer._consumer.consume.side_effect = [[], [make_message()]]
+        next(consumer.consume())
+        for call in consumer._consumer.consume.call_args_list:
+            assert call.kwargs["timeout"] == 1.0
+
+    def test_poll_interval_is_configurable(self, mock_confluent):
+        c = Consumer(username="u", password="p", poll_interval=0.25)
+        c._consumer.consume.side_effect = [[], [make_message()]]
+        next(c.consume())
+        assert c._consumer.consume.call_args.kwargs["timeout"] == 0.25
+
+    def test_invalid_poll_interval(self, mock_confluent):
+        with pytest.raises(AstrocolibriConfigError, match="poll_interval"):
+            Consumer(username="u", password="p", poll_interval=0)
+
+    def test_timeout_still_terminates_the_generator(self, consumer):
+        # Batch mode keeps its documented behaviour: an idle timeout ends
+        # the generator so the caller can do other work.
+        consumer._consumer.consume.side_effect = [[make_message()], []]
+        assert len(list(consumer.consume(timeout=5.0))) == 1
+
+    def test_transient_error_does_not_kill_the_stream(self, consumer, caplog):
+        # A broker connection dropping is routine over weeks of listening;
+        # librdkafka reconnects, so the loop has to survive it.
+        from confluent_kafka import KafkaError
+
+        transport = make_kafka_error(KafkaError._TRANSPORT)
+        bad = make_message(error=transport)
+        good = make_message(b'{"id": "after-reconnect"}')
+        consumer._consumer.consume.side_effect = [[bad], [good]]
+
+        with caplog.at_level(logging.WARNING):
+            received = list(itertools.islice(consumer.consume(), 1))
+
+        assert received[0].value() == {"id": "after-reconnect"}
+        assert "Transient Kafka condition" in caplog.text
+
+    def test_error_flagged_retriable_by_librdkafka_is_survived(self, consumer):
+        err = make_kafka_error(-1234, retriable=True)
+        consumer._consumer.consume.side_effect = [
+            [make_message(error=err)],
+            [make_message()],
+        ]
+        assert len(list(itertools.islice(consumer.consume(), 1))) == 1
+
+    def test_fatal_error_still_raises_in_the_infinite_form(self, consumer):
+        # Never silently swallow something the client cannot recover from,
+        # such as an ACL that does not cover the topic.
+        from confluent_kafka import KafkaError
+
+        err = make_kafka_error(KafkaError.TOPIC_AUTHORIZATION_FAILED)
+        consumer._consumer.consume.side_effect = [[make_message(error=err)]]
+        with pytest.raises(AstrocolibriKafkaError):
+            next(consumer.consume())
 
 
 class TestConsumerLifecycle:

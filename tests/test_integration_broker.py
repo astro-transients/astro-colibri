@@ -37,7 +37,6 @@ Run with:
 
 from __future__ import annotations
 
-import json
 import os
 import threading
 import time
@@ -45,7 +44,6 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
-
 from astrocolibri import Consumer
 
 requests = pytest.importorskip(
@@ -144,15 +142,16 @@ def _trigger_update(cfg: dict, marker: str):
 
 
 def _consume_until(consumer: Consumer, marker: str, deadline: float):
-    """Return the message carrying `marker`, or (None, None) once time is up."""
-    needle = marker.encode()
+    """Return the alert carrying `marker`, or (None, None) once time is up."""
     while time.time() < deadline:
-        for message in consumer.consume(timeout=POLL_INTERVAL):
-            raw = message.value()
-            if raw is None or needle not in raw:
+        for alert in consumer.consume(timeout=POLL_INTERVAL):
+            payload = alert.value()
+            if not isinstance(payload, dict):
+                continue
+            if payload.get("last_modified") != marker:
                 # Traffic from another run on the shared test topic: not ours.
                 continue
-            return message, json.loads(raw.decode("utf-8"))
+            return alert, payload
     return None, None
 
 
@@ -181,17 +180,18 @@ def test_api_update_arrives_on_the_broker_test_topic(config):
             f"update failed: HTTP {response.status_code} {response.text[:300]}"
         )
 
-        message, payload = _consume_until(
+        alert, payload = _consume_until(
             consumer, marker, time.time() + DELIVERY_TIMEOUT
         )
 
-        assert message is not None, (
+        assert alert is not None, (
             f"the API accepted the update but it never reached the "
             f"'{TEST_TOPIC}' topic within {DELIVERY_TIMEOUT:.0f}s"
         )
-        assert message.topic() == TEST_TOPIC
+        assert alert.topic() == TEST_TOPIC
+        # The SDK hands back the decoded payload, never raw Kafka bytes.
+        assert isinstance(payload, dict)
         assert payload.get("trigger_id") == config["trigger_id"]
         assert payload.get("last_modified") == marker
     finally:
         consumer.close()
-
