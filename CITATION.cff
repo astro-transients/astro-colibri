@@ -3,7 +3,7 @@ type: software
 message: "If you use this software, please cite it and the Astro-COLIBRI platform paper."
 title: "astro-colibri"
 version: "1.1.0"
-date-released: 2026-09-13
+date-released: 2026-09-22
 abstract: "Python SDK for consuming Astro-COLIBRI real-time astronomical alerts and accessing Astro-COLIBRI services."
 authors:
   - name: "Astro-COLIBRI team"
