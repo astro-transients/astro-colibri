@@ -191,6 +191,17 @@ class TestExplicitViews:
     def test_format_of_a_null_payload_on_an_unannounced_topic(self):
         assert Alert(make_message(value=None, topic="odd")).format == FORMAT_UNKNOWN
 
+    def test_voevent_parses_the_document(self):
+        alert = Alert(
+            make_message(value=VOEVENT_XML.encode(), topic="astrocolibri.all.VOEvent")
+        )
+        assert alert.voevent().ivorn == "ivo://astro-colibri/AC-001"
+
+    def test_voevent_raises_on_a_json_payload_and_names_the_record(self):
+        with pytest.raises(AstrocolibriDecodeError, match="offset=42") as excinfo:
+            Alert(make_message()).voevent()
+        assert "not a well-formed XML document" in str(excinfo.value)
+
 
 class TestDecodeErrors:
     def test_malformed_json_raises_a_named_error(self):

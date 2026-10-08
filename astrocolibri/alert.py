@@ -6,7 +6,8 @@ Decoded Astro-Colibri alert.
 Kafka carries raw bytes, so a `confluent_kafka.Message` hands back
 `b'{"id": "..."}'` rather than anything you can work with. `Alert` wraps
 that message and gives you the payload already decoded: a `dict` for the
-JSON topics, an XML `str` for the VOEvent topics.
+JSON topics, an XML `str` for the VOEvent topics. `voevent()` goes one step
+further and parses a VOEvent document into a `VOEvent` object.
 
 The accessors keep the `confluent_kafka.Message` method names
 (`value()`, `key()`, `topic()`, ...), so existing code keeps working — it
@@ -21,6 +22,7 @@ from typing import Any, Dict, Optional, Tuple, Union
 from confluent_kafka import Message
 
 from .exceptions import AstrocolibriDecodeError
+from .voevent import VOEvent, parse_voevent
 
 #: Payload is Astro-Colibri JSON; `value()` returns the parsed object.
 FORMAT_JSON = "json"
@@ -230,6 +232,32 @@ class Alert:
             raise AstrocolibriDecodeError(
                 f"{self._where()}: payload is not valid JSON: {exc}"
             ) from exc
+
+    def voevent(self) -> VOEvent:
+        """
+        The payload parsed as a VOEvent document.
+
+        Meant for the ``astrocolibri.*.VOEvent`` topics: the time comes back
+        as an aware ``datetime``, the position in degrees and every Param
+        with its value converted. See :func:`astrocolibri.parse_voevent`.
+
+        Example::
+
+            consumer.subscribe(["astrocolibri.all.VOEvent"])
+            for alert in consumer.consume():
+                event = alert.voevent()
+                if event.is_test:
+                    continue
+                print(event.name, event.time, event.position)
+
+        Raises:
+            AstrocolibriDecodeError: If the payload is not valid UTF-8 or
+                not a VOEvent document.
+        """
+        try:
+            return parse_voevent(self.text())
+        except AstrocolibriDecodeError as exc:
+            raise AstrocolibriDecodeError(f"{self._where()}: {exc}") from exc
 
     @property
     def format(self) -> str:

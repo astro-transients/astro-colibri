@@ -347,6 +347,9 @@ class Client:
             xml = client.get_event_voevent("GRB 190829A")
             with open("GRB190829A.xml", "w") as f:
                 f.write(xml)
+
+            event = parse_voevent(xml)      # from astrocolibri import parse_voevent
+            print(event.time, event.position, event.get("observatory"))
         """
         name = _required_text(identifier, "identifier")
         params: List[Tuple[str, str]] = [("trigger_id", name)]

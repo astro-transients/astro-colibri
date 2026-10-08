@@ -1,0 +1,82 @@
+<?xml version="1.0" ?>
+<voe:VOEvent xmlns:voe="http://www.ivoa.net/xml/VOEvent/v2.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ivorn="ivo://AstroCOLIBRI/NONE_OT_SN_TNS2023ixf_6_20230519T172715" role="observation" version="2.0" xsi:schemaLocation="http://www.ivoa.net/xml/VOEvent/v2.0 http://www.ivoa.net/xml/VOEvent/VOEvent-v2.0.xsd">
+  <Who>
+    <AuthorIVORN>ivo://AstroCOLIBRI</AuthorIVORN>
+    <Author>
+      <contactName>Astro-COLIBRI</contactName>
+      <contactEmail>astro.colibri@gmail.com</contactEmail>
+    </Author>
+    <Date>2026-09-27T21:01:55</Date>
+    <Description>This VOEvent was created by Astro-COLIBRI by converting the internal event JSON format.</Description>
+  </Who>
+  <What>
+    <Group name="Identifiers">
+      <Param name="trigger_id" value="TNS2023ixf" ucd="meta.id"/>
+      <Param name="source_name" value="SN 2023ixf" ucd="meta.id"/>
+      <Param name="astro_colibri_id" value="AC 2023kru" ucd="meta.id"/>
+      <Param name="identifier" value="AC 2023kru" ucd="meta.id"/>
+      <Param name="archive_id" value="TNS2023ixf_6" ucd="meta.id"/>
+    </Group>
+    <Group name="Classification">
+      <Param name="observatory" value="None" ucd="meta.id"/>
+      <Param name="type" value="ot_sn" ucd="meta.code.class"/>
+      <Param name="classification" value="SN II" ucd="meta.code.class"/>
+      <Param name="broker" value="TNS" ucd="meta.code"/>
+      <Param name="follow_up" value="[&quot;bhtom&quot;]">
+        <Description>Follow-up observatories known to Astro-COLIBRI.</Description>
+      </Param>
+    </Group>
+    <Group name="Measurements">
+      <Param name="err" value="0.0" unit="deg" ucd="stat.error.sys" dataType="float"/>
+      <Param name="redshift" value="0.0008" ucd="src.redshift" dataType="float"/>
+      <Param name="transient_flux" value="14.9" unit="mag" ucd="phot.flux" dataType="float"/>
+      <Param name="sun_distance" value="102.896" unit="deg" ucd="pos.angDistance" dataType="float"/>
+      <Param name="extinction_ebv" value="0.008840118534862995" ucd="phys.absorption" dataType="float"/>
+      <Param name="transient_flux_band" value="Clear">
+        <Description>Band or filter corresponding to transient_flux.</Description>
+      </Param>
+    </Group>
+    <Group name="Links">
+      <Param name="lc_url" value="https://storage.googleapis.com/astro-colibri-optical-lightcurve/Astro-COLIBRI_SN2023ixf_lightcurve_created2024-07-17.png" ucd="meta.ref.url">
+        <Reference uri="https://storage.googleapis.com/astro-colibri-optical-lightcurve/Astro-COLIBRI_SN2023ixf_lightcurve_created2024-07-17.png" type="url"/>
+      </Param>
+    </Group>
+  </What>
+  <WhereWhen>
+    <ObsDataLocation>
+      <ObservatoryLocation id="NONE"/>
+      <ObservationLocation>
+        <AstroCoordSystem id="UTC-FK5-GEO"/>
+        <AstroCoords coord_system_id="UTC-FK5-GEO">
+          <Time unit="s">
+            <TimeInstant>
+              <ISOTime>2023-05-19T17:27:15.000</ISOTime>
+            </TimeInstant>
+          </Time>
+          <Position2D unit="deg">
+            <Name1>RA</Name1>
+            <Name2>Dec</Name2>
+            <Value2>
+              <C1>210.910674637</C1>
+              <C2>54.3116510708</C2>
+            </Value2>
+            <Error2Radius>0.0</Error2Radius>
+          </Position2D>
+        </AstroCoords>
+      </ObservationLocation>
+    </ObsDataLocation>
+    <Description>The RA,Dec coordinates are of the type: source_object.</Description>
+  </WhereWhen>
+  <How>
+    <Description>None / TNS</Description>
+    <Reference uri="https://astro-colibri.com/event:TNS2023ixf" type="url"/>
+  </How>
+  <Why importance="1.000">
+    <Inference probability="1.000">
+      <Concept>process.variation.transient;em.opt</Concept>
+      <Name>SN 2023ixf</Name>
+      <Description>host: M101</Description>
+    </Inference>
+  </Why>
+  <Description>host: M101</Description>
+</voe:VOEvent>

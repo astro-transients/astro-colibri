@@ -1,0 +1,96 @@
+<?xml version="1.0" ?>
+<voe:VOEvent xmlns:voe="http://www.ivoa.net/xml/VOEvent/v2.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ivorn="ivo://AstroCOLIBRI/LVC_H1_L1_GW_S230518h_29_20230518T125908" role="observation" version="2.0" xsi:schemaLocation="http://www.ivoa.net/xml/VOEvent/v2.0 http://www.ivoa.net/xml/VOEvent/VOEvent-v2.0.xsd">
+  <Who>
+    <AuthorIVORN>ivo://AstroCOLIBRI</AuthorIVORN>
+    <Author>
+      <contactName>Astro-COLIBRI</contactName>
+      <contactEmail>astro.colibri@gmail.com</contactEmail>
+    </Author>
+    <Date>2026-09-27T21:01:55</Date>
+    <Description>This VOEvent was created by Astro-COLIBRI by converting the internal event JSON format.</Description>
+  </Who>
+  <What>
+    <Group name="Identifiers">
+      <Param name="trigger_id" value="S230518h" ucd="meta.id"/>
+      <Param name="source_name" value="S230518h" ucd="meta.id"/>
+      <Param name="astro_colibri_id" value="AC 2023kqf" ucd="meta.id"/>
+      <Param name="identifier" value="GW 2023kqf" ucd="meta.id"/>
+      <Param name="archive_id" value="S230518h_29" ucd="meta.id"/>
+      <Param name="original_ivorn" value="ivo://gwnet/LVC#S230518h-4-Update" ucd="meta.id"/>
+      <Param name="reference" value="ivo://gwnet/LVC#S230518h-1-Preliminary" ucd="meta.id"/>
+    </Group>
+    <Group name="Classification">
+      <Param name="observatory" value="lvc" ucd="meta.id"/>
+      <Param name="instrument" value="H1,L1" ucd="meta.id"/>
+      <Param name="type" value="gw" ucd="meta.code.class"/>
+      <Param name="alert_type" value="Update" ucd="meta.code"/>
+      <Param name="follow_up" value="[&quot;icecube neutrino observatory&quot;, &quot;ligo/virgo/kagra&quot;, &quot;integral&quot;, &quot;master-net&quot;, &quot;fermi&quot;, &quot;astrosat&quot;, &quot;nasa/ipac extragalactic database (ned)&quot;, &quot;maxi&quot;, &quot;swift&quot;, &quot;agile&quot;, &quot;konus-wind&quot;, &quot;swope 1-m telescope&quot;, &quot;asteroid terrestrial-impact last alert system&quot;, &quot;kmtnet&quot;, &quot;australia telescope compact array&quot;, &quot;calet&quot;, &quot;transiting exoplanet survey satellite&quot;, &quot;glowbug&quot;]">
+        <Description>Follow-up observatories known to Astro-COLIBRI.</Description>
+      </Param>
+    </Group>
+    <Group name="Measurements">
+      <Param name="far" value="0.010156060444406362" unit="yr^-1" ucd="stat.probability" dataType="float"/>
+      <Param name="distance" value="204.2830052151164" unit="Mpc" ucd="pos.distance" dataType="float"/>
+      <Param name="distance_error" value="56.63779352179084" unit="Mpc" ucd="stat.error" dataType="float"/>
+      <Param name="significance" value="1.0" ucd="stat.snr" dataType="float"/>
+      <Param name="gw_BNS" value="0.0" unit="dn" ucd="stat.probability" dataType="float"/>
+      <Param name="gw_NSBH" value="0.86" unit="dn" ucd="stat.probability" dataType="float"/>
+      <Param name="gw_BBH" value="0.04" unit="dn" ucd="stat.probability" dataType="float"/>
+      <Param name="gw_MassGap" value="0.0" unit="dn" ucd="stat.probability" dataType="float"/>
+      <Param name="gw_Noise" value="0.1" unit="dn" ucd="stat.probability" dataType="float"/>
+      <Param name="gw_hasNS" value="1.0" unit="dn" ucd="stat.probability" dataType="float"/>
+      <Param name="pkt_ser_num" value="4" ucd="meta.id" dataType="int"/>
+      <Param name="sun_distance" value="61.231" unit="deg" ucd="pos.angDistance" dataType="float"/>
+      <Param name="extinction_ebv" value="0.13776108622550964" ucd="phys.absorption" dataType="float"/>
+      <Param name="gw_pipeline" value="pycbc"/>
+      <Param name="area_50" value="131" unit="deg2" ucd="stat.error;pos.errorEllipse" dataType="float">
+        <Description>Sky area within the 50% credible region [deg²].</Description>
+      </Param>
+      <Param name="area_90" value="436" unit="deg2" ucd="stat.error;pos.errorEllipse" dataType="float">
+        <Description>Sky area within the 90% credible region [deg²].</Description>
+      </Param>
+    </Group>
+    <Group name="Links">
+      <Param name="event_url" value="https://gracedb.ligo.org/api/superevents/S230518h/files/Bilby.offline0.multiorder.fits,0" ucd="meta.ref.url">
+        <Reference uri="https://gracedb.ligo.org/api/superevents/S230518h/files/Bilby.offline0.multiorder.fits,0" type="url"/>
+      </Param>
+    </Group>
+  </What>
+  <WhereWhen>
+    <ObsDataLocation>
+      <ObservatoryLocation id="LVC"/>
+      <ObservationLocation>
+        <AstroCoordSystem id="UTC-FK5-GEO"/>
+        <AstroCoords coord_system_id="UTC-FK5-GEO">
+          <Time unit="s">
+            <TimeInstant>
+              <ISOTime>2023-05-18T12:59:08.000</ISOTime>
+            </TimeInstant>
+          </Time>
+          <Position2D unit="deg">
+            <Name1>RA</Name1>
+            <Name2>Dec</Name2>
+            <Value2>
+              <C1>100.72265625000001</C1>
+              <C2>-22.10481241978742</C2>
+            </Value2>
+            <Error2Radius>0</Error2Radius>
+          </Position2D>
+        </AstroCoords>
+      </ObservationLocation>
+    </ObsDataLocation>
+    <Description>The RA,Dec coordinates are of the type: source_object.</Description>
+  </WhereWhen>
+  <How>
+    <Description>lvc / H1,L1</Description>
+    <Reference uri="https://astro-colibri.com/event:S230518h" type="url"/>
+    <Reference uri="https://gracedb.ligo.org/api/superevents/S230518h/files/Bilby.offline0.multiorder.fits,0" type="url"/>
+  </How>
+  <Why importance="1.000">
+    <Inference probability="1.000">
+      <Concept>process.variation.transient;phys.gravity</Concept>
+      <Name>S230518h</Name>
+    </Inference>
+  </Why>
+  <Description>Astro-COLIBRI export for S230518h.</Description>
+</voe:VOEvent>

@@ -23,6 +23,12 @@ Broker quick start, a complete listener that runs until you stop it::
 
 Payloads arrive decoded, never as raw bytes: ``alert.value()`` is a ``dict``
 on the JSON topics and the XML document as ``str`` on the VOEvent topics.
+``alert.voevent()`` parses that document; :func:`parse_voevent` does the
+same for any VOEvent XML, including GCN notices::
+
+    for alert in consumer.consume():
+        event = alert.voevent()       # on an astrocolibri.*.VOEvent topic
+        print(event.ivorn, event.time, event.position, event.get("far"))
 
 API quick start (your user ID is shown at https://astro-colibri.com/account)::
 
@@ -64,6 +70,7 @@ from .exceptions import (
     AstrocolibriRateLimitError,
     AstrocolibriTransportError,
 )
+from .voevent import VOEvent, parse_voevent
 
 __all__ = [
     "Consumer",
@@ -71,6 +78,8 @@ __all__ = [
     "Client",
     "TOPICS",
     "OPTIONAL_PARAMETERS",
+    "parse_voevent",
+    "VOEvent",
     "FORMAT_JSON",
     "FORMAT_VOEVENT",
     "FORMAT_UNKNOWN",

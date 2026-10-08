@@ -42,6 +42,8 @@ class TestPublicSurface:
             "Client",
             "TOPICS",
             "OPTIONAL_PARAMETERS",
+            "parse_voevent",
+            "VOEvent",
             "__version__",
         ):
             assert name in astrocolibri.__all__

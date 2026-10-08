@@ -142,6 +142,7 @@ Everything else about the record stays available:
 | `alert.value()` | Decoded payload — `dict` or XML `str` |
 | `alert.text()` | Payload as text, whatever the format |
 | `alert.json()` | Payload parsed as JSON, whatever the topic |
+| `alert.voevent()` | Payload parsed as a VOEvent document; see [Parsing VOEvents](#parsing-voevents) |
 | `alert.raw` | `bytes` — payload exactly as published |
 | `alert.format` | `"json"` or `"voevent"` |
 | `alert.key()` | `str` — the event id (all updates of an event share it) |
@@ -173,6 +174,71 @@ consumer = Consumer(username="...", password="...", decode=False)
 
 ---
 
+## Parsing VOEvents
+
+The VOEvent topics and `client.get_event_voevent()` deliver
+[IVOA VOEvent 2.0](https://www.ivoa.net/documents/VOEvent/) XML.
+`parse_voevent()` turns a document into a `VOEvent` object: the time as an
+aware UTC `datetime`, the position in degrees, and every `Param` with its
+value converted. On a broker topic, `alert.voevent()` does it for you:
+
+```python
+consumer.subscribe(["astrocolibri.all.VOEvent"])
+
+for alert in consumer.consume():
+    event = alert.voevent()
+    if event.is_test:
+        continue
+    print(event.name, event.time, event.position)
+    print(event.get("type"), event.get("far"))
+```
+
+```python
+from astrocolibri import Client, parse_voevent
+
+with Client() as client:
+    event = parse_voevent(client.get_event_voevent("S230518h"))
+
+event.get("trigger_id")         # "S230518h"
+event.get("area_90")            # 436.0, a float
+event.get("follow_up")          # a list
+event.position.to_skycoord()    # astropy SkyCoord, if astropy is installed
+```
+
+The parser follows the VOEvent standard only, so it also reads the notices
+GCN distributes (Swift, Fermi, LVK, SVOM, IceCube, ...), and it needs
+nothing beyond the Python standard library:
+
+```python
+with open("notice.xml", "rb") as f:
+    notice = parse_voevent(f.read())
+```
+
+| | |
+|---|---|
+| `event.ivorn`, `event.role` | Identifier, and `"observation"`, `"test"`, `"utility"` or `"prediction"` (`event.is_test`) |
+| `event.time` | When the event happened, an aware UTC `datetime` |
+| `event.position` | `ra`, `dec`, `err` (error radius) in degrees, and the coordinate `system`; `None` without a usable position |
+| `event.get(name)`, `event.param(name)` | A Param's converted value, or the Param itself with its `unit`, `ucd` and `description` |
+| `event.params`, `event.groups` | Params outside any Group, and each Group's Params, by name |
+| `event.to_dict()` | Every Param's value in one flat `dict`, handy for building a table |
+| `event.importance`, `event.concepts`, `event.name` | The `Why` section |
+| `event.citations` | Earlier documents this one follows up, supersedes or retracts |
+| `event.root` | The parsed XML, for anything not covered above |
+
+A Param's `value` follows its `dataType`: `int`, `float`, or else the text,
+which `raw` always holds. Astro-COLIBRI declares the type of every number
+and its lists come back decoded. Most GCN notices declare no type, so their
+numbers arrive as text: `float(notice.get("Burst_Signif"))`. `err` is `None`
+when no error radius is given; for gravitational waves and other events
+localized to irregular regions it is only a rough scale.
+
+A malformed document raises `AstrocolibriDecodeError`. Astro-COLIBRI
+documents published before September 2026, which prefixed every element
+with `voe:`, parse the same way.
+
+---
+
 ## Example scripts
 
 Each script is a complete, runnable program:
@@ -185,6 +251,7 @@ Each script is a complete, runnable program:
 | [`examples/latest_transients.py`](examples/latest_transients.py) | Searching a time window, with user ID and quota errors handled | User ID |
 | [`examples/cone_search.py`](examples/cone_search.py) | Searching around a position written in sexagesimal notation | User ID |
 | [`examples/contour_search.py`](examples/contour_search.py) | Searching inside a gravitational-wave localization contour | User ID |
+| [`examples/parse_voevent.py`](examples/parse_voevent.py) | Parsing an event's VOEvent, or any VOEvent XML file such as a GCN notice | Nothing |
 
 ```bash
 python example.py
@@ -350,6 +417,7 @@ The SDK never retries a request on its own. When the quota runs out you get
 
 ```python
 voevent = client.get_event_voevent("GRB 190829A")            # VOEvent XML
+event = parse_voevent(voevent)                               # parsed, see Parsing VOEvents
 votable = client.cone_search(..., return_format="votable")   # VOTable XML
 ```
 
@@ -453,6 +521,12 @@ Client(
 
 Every method also accepts `timeout=`. `Client` is a context manager. Like the
 `requests.Session` it holds, it is not thread-safe: use one per thread.
+
+### `parse_voevent(document)`
+
+Parses VOEvent XML (`str` or `bytes`) into a `VOEvent`, and raises
+`AstrocolibriDecodeError` if the document is not one. See
+[Parsing VOEvents](#parsing-voevents).
 
 ---
 

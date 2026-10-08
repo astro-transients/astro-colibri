@@ -24,6 +24,7 @@ import pytest
 from .helpers import FAKE_UID, make_response
 
 EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
+VOEVENTS = Path(__file__).resolve().parent / "data" / "voevents"
 
 XRT = {
     "trigger_id": "922968",
@@ -115,6 +116,7 @@ def test_every_example_is_covered():
         "latest_transients",
         "cone_search",
         "contour_search",
+        "parse_voevent",
     }
 
 
@@ -261,3 +263,44 @@ class TestContourSearch:
         api.request.return_value = make_response(207, MISS)
         assert load("contour_search").main("NOPE") == 1
         assert api.request.call_count == 1
+
+
+class TestParseVoevent:
+    def test_downloads_and_parses_an_event(self, api, capsys):
+        xml = (VOEVENTS / "astrocolibri_grb_190829A_swift.xml").read_text(
+            encoding="utf-8"
+        )
+        api.request.return_value = make_response(
+            200, text=xml, content_type="application/xml"
+        )
+        assert load("parse_voevent").main("GRB 190829A") == 0
+        out = capsys.readouterr().out
+        assert "Name         GRB 190829A" in out
+        assert "Time         2019-08-29T19:56:44.600000+00:00" in out
+        assert "error radius 0.0016°" in out
+        assert "Measurements" in out
+        assert api.request.call_args[1]["params"] == [("trigger_id", "GRB 190829A")]
+
+    def test_parses_a_gcn_notice_from_a_file(self, api, capsys):
+        path = VOEVENTS / "gcn_fermi_gbm_fin_pos.xml"
+        assert load("parse_voevent").main(str(path)) == 0
+        out = capsys.readouterr().out
+        assert "Fermi (via VO-GCN)" in out
+        assert "Trigger_ID" in out
+        assert "Cites        ivo://nasa.gsfc.gcn/Fermi#GBM_Alert" in out
+        api.request.assert_not_called()
+
+    def test_test_notice_without_position(self, api, capsys):
+        assert (
+            load("parse_voevent").main(str(VOEVENTS / "gcn_lvk_preliminary.xml")) == 0
+        )
+        out = capsys.readouterr().out
+        assert "(a test, not a real event)" in out
+        assert "Position     none given" in out
+
+    def test_missing_event(self, api, capsys):
+        api.request.return_value = make_response(
+            404, {"message": "not found", "status_code": "404"}
+        )
+        assert load("parse_voevent").main("NOPE") == 1
+        assert "Could not read a VOEvent from 'NOPE'" in capsys.readouterr().out

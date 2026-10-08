@@ -1,0 +1,80 @@
+<?xml version="1.0" ?>
+<voe:VOEvent xmlns:voe="http://www.ivoa.net/xml/VOEvent/v2.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ivorn="ivo://AstroCOLIBRI/SWIFT_XRT_GRB_922968_98_20190829T195644" role="observation" version="2.0" xsi:schemaLocation="http://www.ivoa.net/xml/VOEvent/v2.0 http://www.ivoa.net/xml/VOEvent/VOEvent-v2.0.xsd">
+  <Who>
+    <AuthorIVORN>ivo://AstroCOLIBRI</AuthorIVORN>
+    <Author>
+      <contactName>Astro-COLIBRI</contactName>
+      <contactEmail>astro.colibri@gmail.com</contactEmail>
+    </Author>
+    <Date>2026-09-27T21:01:55</Date>
+    <Description>This VOEvent was created by Astro-COLIBRI by converting the internal event JSON format.</Description>
+  </Who>
+  <What>
+    <Group name="Identifiers">
+      <Param name="trigger_id" value="922968" ucd="meta.id"/>
+      <Param name="source_name" value="GRB 190829A" ucd="meta.id"/>
+      <Param name="astro_colibri_id" value="AC 2019biq" ucd="meta.id"/>
+      <Param name="identifier" value="GRB 2019biq" ucd="meta.id"/>
+      <Param name="archive_id" value="922968_98" ucd="meta.id"/>
+      <Param name="original_ivorn" value="ivo://nasa.gsfc.gcn/SWIFT#XRT_Pos_922968-824" ucd="meta.id"/>
+      <Param name="reference" value="ivo://nasa.gsfc.gcn/SWIFT#BAT_GRB_Pos_922968-812" ucd="meta.id"/>
+    </Group>
+    <Group name="Classification">
+      <Param name="observatory" value="swift" ucd="meta.id"/>
+      <Param name="instrument" value="xrt" ucd="meta.id"/>
+      <Param name="type" value="grb" ucd="meta.code.class"/>
+      <Param name="follow_up" value="[&quot;hess&quot;, &quot;liverpool telescope&quot;, &quot;upgraded giant metrewave radio telescope&quot;, &quot;meerkat&quot;, &quot;las cumbres observatory&quot;, &quot;grond&quot;, &quot;master-saao robotic telescope&quot;, &quot;konus-wind&quot;, &quot;keck i&quot;, &quot;stroncone observatory&quot;, &quot;australia telescope compact array&quot;, &quot;gran telescopio canarias&quot;, &quot;crimean astrophysical observatory&quot;, &quot;fermi&quot;, &quot;swift&quot;, &quot;master-kislovodsk robotic telescope&quot;, &quot;dabancheng&quot;, &quot;master-net&quot;, &quot;indian astronomical observatory, hanle&quot;, &quot;nordic optical telescope&quot;, &quot;h.e.s.s.&quot;, &quot;eso la silla observatory (chile)&quot;, &quot;global master-net&quot;, &quot;agile&quot;, &quot;lick observatory&quot;, &quot;antares&quot;, &quot;mmt&quot;, &quot;united kingdom infrared telescope&quot;, &quot;noema&quot;, &quot;telescopio nazionale galileo&quot;, &quot;keck observatory&quot;]">
+        <Description>Follow-up observatories known to Astro-COLIBRI.</Description>
+      </Param>
+    </Group>
+    <Group name="Measurements">
+      <Param name="err" value="0.0016" unit="deg" ucd="stat.error.sys" dataType="float"/>
+      <Param name="redshift" value="0.0785" ucd="src.redshift" dataType="float"/>
+      <Param name="pkt_ser_num" value="2" ucd="meta.id" dataType="int"/>
+      <Param name="sun_distance" value="114.118" unit="deg" ucd="pos.angDistance" dataType="float"/>
+      <Param name="extinction_ebv" value="0.04863717779517174" ucd="phys.absorption" dataType="float"/>
+    </Group>
+    <Group name="Links">
+      <Param name="url" value="https://gcn.nasa.gov/circulars/25565" ucd="meta.ref.url">
+        <Reference uri="https://gcn.nasa.gov/circulars/25565" type="url"/>
+      </Param>
+    </Group>
+  </What>
+  <WhereWhen>
+    <ObsDataLocation>
+      <ObservatoryLocation id="SWIFT"/>
+      <ObservationLocation>
+        <AstroCoordSystem id="UTC-FK5-GEO"/>
+        <AstroCoords coord_system_id="UTC-FK5-GEO">
+          <Time unit="s">
+            <TimeInstant>
+              <ISOTime>2019-08-29T19:56:44.600</ISOTime>
+            </TimeInstant>
+          </Time>
+          <Position2D unit="deg">
+            <Name1>RA</Name1>
+            <Name2>Dec</Name2>
+            <Value2>
+              <C1>44.5423</C1>
+              <C2>-8.9576</C2>
+            </Value2>
+            <Error2Radius>0.0016</Error2Radius>
+          </Position2D>
+        </AstroCoords>
+      </ObservationLocation>
+    </ObsDataLocation>
+    <Description>The RA,Dec coordinates are of the type: source_object.</Description>
+  </WhereWhen>
+  <How>
+    <Description>swift / xrt</Description>
+    <Reference uri="https://astro-colibri.com/event:922968" type="url"/>
+  </How>
+  <Why importance="1.000">
+    <Inference probability="1.000">
+      <Concept>process.variation.burst;em</Concept>
+      <Name>GRB 190829A</Name>
+      <Description>0.0785 (GTC: absorption &amp; emission from SDSS J025810.28-085719.2) / GCN #25565</Description>
+    </Inference>
+  </Why>
+  <Description>0.0785 (GTC: absorption &amp; emission from SDSS J025810.28-085719.2) / GCN #25565</Description>
+</voe:VOEvent>
