@@ -7,6 +7,7 @@ the SDK for **Astro-COLIBRI**. It has two parts:
 |---|---|---|
 | `Consumer` | Receives multi-messenger alerts in real time, as JSON or VOEvent/XML, from the Astro-COLIBRI broker | Broker credentials from [astro-colibri.com/broker](https://astro-colibri.com/broker) |
 | `Client` | Queries the Astro-COLIBRI API: looks up events and sources, and searches for transients by time window or around a sky position | Your user ID from [astro-colibri.com/account](https://astro-colibri.com/account) (lookups work without one) |
+| `EventFilter` | Applies your Astro-COLIBRI filters (saved in the app, downloaded as a file, or written as a dictionary) to the alert stream and to search results | Your user ID, for the filters saved in the app |
 
 Full documentation, with tutorials, is at
 [astro-colibri.science/sdkdoc](https://astro-colibri.science/sdkdoc).
@@ -48,12 +49,33 @@ with Consumer(
     # Runs until you stop it, waiting for the next alert.
     for alert in consumer.consume():
         data = alert.value()
-        print(f"Alert received: {data['id']} — RA={data['ra']}, Dec={data['dec']}")
+        print(f"Alert received: {data['trigger_id']} — RA={data['ra']}, Dec={data['dec']}")
 ```
 
 That loop is the whole listener: `consume()` never ends on its own, so the
 script keeps waiting for the next alert instead of exiting after the current
 backlog. Stop it with Ctrl-C.
+
+### 3. Optional: only the alerts that pass your filters
+
+Give `consume()` an `event_filter` and the loop only sees the alerts that pass
+it. The filters you set up in the Astro-COLIBRI app work as they are; they are
+fetched with your [user ID](#1-get-your-user-id):
+
+```python
+from astrocolibri import Consumer, EventFilter
+
+my_filter = EventFilter.from_saved_filters()       # reads ASTROCOLIBRI_UID
+
+with Consumer(username="your-username", password="your-password") as consumer:
+    consumer.subscribe(["astrocolibri.all.JSON"])
+    for alert in consumer.consume(event_filter=my_filter):
+        event = alert.event()
+        print(event["trigger_id"], event["type"], event["ra"], event["dec"])
+```
+
+See [Filtering the stream](#filtering-the-stream) for filter files, filter
+dictionaries and the VOEvent topics.
 
 ---
 
@@ -130,7 +152,7 @@ objects whose `value()` is the payload already decoded:
 for alert in consumer.consume():
     if alert.format == "json":
         data = alert.value()            # dict
-        print(data["id"], data["type"], data["ra"], data["dec"])
+        print(data["trigger_id"], data["type"], data["ra"], data["dec"])
     else:
         print(alert.value())            # XML, as text
 ```
@@ -143,9 +165,11 @@ Everything else about the record stays available:
 | `alert.text()` | Payload as text, whatever the format |
 | `alert.json()` | Payload parsed as JSON, whatever the topic |
 | `alert.voevent()` | Payload parsed as a VOEvent document; see [Parsing VOEvents](#parsing-voevents) |
+| `alert.event()` | The event as a `dict` in Astro-COLIBRI's JSON structure, on the JSON **and** the VOEvent topics |
 | `alert.raw` | `bytes` — payload exactly as published |
 | `alert.format` | `"json"` or `"voevent"` |
 | `alert.key()` | `str` — the event id (all updates of an event share it) |
+| `alert.important` | `True` if the alert is also on the `astrocolibri.important.*` topics, else `False` |
 | `alert.headers()` | `dict[str, str]` — `event_id`, `dedupe_key`, `event_version`, `update_type`, `important`, `changed_fields` |
 | `alert.topic()`, `.partition()`, `.offset()`, `.timestamp()` | Kafka coordinates |
 | `alert.message` | The underlying `confluent_kafka.Message` |
@@ -222,6 +246,7 @@ with open("notice.xml", "rb") as f:
 | `event.get(name)`, `event.param(name)` | A Param's converted value, or the Param itself with its `unit`, `ucd` and `description` |
 | `event.params`, `event.groups` | Params outside any Group, and each Group's Params, by name |
 | `event.to_dict()` | Every Param's value in one flat `dict`, handy for building a table |
+| `event.to_colibri_event()` | The event in Astro-COLIBRI's JSON structure, as on the JSON topics; Astro-COLIBRI documents only |
 | `event.importance`, `event.concepts`, `event.name` | The `Why` section |
 | `event.citations` | Earlier documents this one follows up, supersedes or retracts |
 | `event.root` | The parsed XML, for anything not covered above |
@@ -239,13 +264,78 @@ with `voe:`, parse the same way.
 
 ---
 
+## Filtering the stream
+
+An `EventFilter` applies an Astro-COLIBRI filter: the same structure the app
+builds, the API takes as `filter`, and the app's filter menu downloads. It is
+evaluated by the API's own filter engine, so an alert passes exactly when the
+API's searches would return its event. Build one from any of three sources:
+
+```python
+from astrocolibri import EventFilter
+
+# 1. The filters saved in the Astro-COLIBRI app for your account. Needs your
+#    user ID and counts once against your daily API quota.
+my_filter = EventFilter.from_saved_filters()           # reads ASTROCOLIBRI_UID
+
+# 2. A filter file, such as the one the "Download Filters" button in the
+#    app's filter menu saves. Needs no user ID.
+my_filter = EventFilter.from_file("Astro-COLIBRI_filters.json")
+
+# 3. A filter dictionary, in the structure described under Filters below.
+my_filter = EventFilter({
+    "type": "FieldSpecification",
+    "field": "type",
+    "operation": "==",
+    "typeField": "string",
+    "value": "grb",
+})
+```
+
+Then pass it to `consume()`, or keep the matching items of any stream with
+`my_filter.filter(...)`, or test one event with `my_filter.matches(...)`:
+
+```python
+for alert in consumer.consume(event_filter=my_filter):
+    handle(alert.event())
+
+for alert in my_filter.filter(consumer.consume()):   # the same thing
+    handle(alert.event())
+
+grbs = list(my_filter.filter(results["voevents"]))   # API search results
+```
+
+- **Both kinds of topic.** On the VOEvent topics each document is converted
+  back to Astro-COLIBRI's JSON structure (`alert.event()`, or
+  `event.to_colibri_event()` on a parsed VOEvent) before it is tested, so a
+  filter gives the same answer on `astrocolibri.all.VOEvent` as on
+  `astrocolibri.all.JSON`. VOEvents published before the broker started to
+  include photometry (alongside SDK 1.3.0) carry none, so filters on light
+  curves reject them.
+- **Heartbeats always pass**: they report on the broker, not on an event.
+- **An alert that cannot be decoded passes**, with a warning in the log, and
+  raises `AstrocolibriDecodeError` where you read it, as without a filter.
+- **Saved filters are fetched once**, when `from_saved_filters()` runs.
+  Filters you change in the app later apply after you call it again.
+- **"Days since" filters are measured from now.** A filter such as "last
+  detection within 7 days" judges a replayed alert (`start_at="earliest"`)
+  against today, not against the day it was published.
+- An invalid filter raises `AstrocolibriConfigError` before anything is
+  consumed, with the API's description of the problem.
+
+`my_filter.to_dict()` returns the filter dictionary, to search the archive
+with the same filter: `client.latest_transients(..., event_filter=my_filter.to_dict())`.
+
+---
+
 ## Example scripts
 
 Each script is a complete, runnable program:
 
 | Script | Shows | Needs |
 |---|---|---|
-| [`example.py`](example.py) | A broker listener that subscribes to every topic and prints alerts as they arrive; stop it with Ctrl-C | Broker credentials |
+| [`example.py`](example.py) | A broker listener that subscribes to every topic and prints alerts as they arrive, optionally only those that pass your filters; stop it with Ctrl-C | Broker credentials |
+| [`examples/filter_stream.py`](examples/filter_stream.py) | A broker listener that keeps only the alerts passing your app filters or a filter file | Broker credentials, and a user ID or a filter file |
 | [`examples/get_event.py`](examples/get_event.py) | Looking up one event by trigger ID or name | Nothing |
 | [`examples/resolve_source.py`](examples/resolve_source.py) | Listing every localization of a source, then fetching the best one | Nothing |
 | [`examples/latest_transients.py`](examples/latest_transients.py) | Searching a time window, with user ID and quota errors handled | User ID |
@@ -269,6 +359,19 @@ python examples/resolve_source.py "GRB 190829A"
 | `astrocolibri.important.JSON` | Important alerts, Astro-Colibri JSON format |
 | `astrocolibri.important.VOEvent` | Important alerts, VOEvent/XML format |
 | `astrocolibri.heartbeat` | Pipeline liveness message, JSON format |
+
+Every alert on the `all` topics says whether it was also published on the
+`important` ones, so you can subscribe to the full stream and still pick out
+the important alerts with `alert.important`. It reads the `important` Kafka
+header (`"true"`/`"false"`) that the broker attaches to every alert, which
+consumers outside this SDK can read too.
+
+```python
+consumer.subscribe(["astrocolibri.all.JSON"])
+for alert in consumer.consume():
+    if alert.important:
+        print("important:", alert.value()["trigger_id"])
+```
 
 ---
 
@@ -358,8 +461,10 @@ results = client.cone_search(
 Gravitational waves, Fermi/GBM and IPN bursts, IceCube neutrinos and MAXI
 transients are localized to regions far from circular. Search inside the
 event's 90% localization contour instead of a circle, optionally widened by a
-margin in degrees. If no contour is stored, the circle is searched, and
-`"search_region"` says which one was used:
+margin in degrees. Events that store a single region are searched inside that
+region: 99% for IPN bursts, the containment level of the notice for MAXI. If
+no contour is stored, the circle is searched, and `"search_region"` says which
+one was used (`"contour_90"` stands for any contour search):
 
 ```python
 results = client.cone_search(
@@ -401,6 +506,10 @@ or apply the filters you saved in the app:
 results = client.latest_transients(start=start, end=end, use_saved_filters=True)
 ```
 
+`client.get_saved_filters()` returns those saved filters as a filter
+dictionary, and an [`EventFilter`](#filtering-the-stream) applies any of them
+to the broker stream.
+
 ### Your quota
 
 Searches count against a daily per-account quota (100 requests at the time of
@@ -427,7 +536,7 @@ votable = client.cone_search(..., return_format="votable")   # VOTable XML
 |---|---|
 | `AstrocolibriConfigError` | An argument is invalid. Raised before anything is sent, so it costs no quota |
 | `AstrocolibriAuthError` | A search without a user ID, or with one the API does not recognize |
-| `AstrocolibriNotFoundError` | No event matches the identifier |
+| `AstrocolibriNotFoundError` | No event matches the identifier, or no filters are saved in the app for your account |
 | `AstrocolibriRateLimitError` | The daily search quota is used up; see `reset_time` |
 | `AstrocolibriAPIError` | The API rejected or failed the request; see `status_code` and `message` |
 | `AstrocolibriTransportError` | The API could not be reached, or the request timed out |
@@ -459,7 +568,7 @@ Consumer(
 
 Subscribe to a list of topics.
 
-#### `consumer.consume(num_messages=1, timeout=-1)`
+#### `consumer.consume(num_messages=1, timeout=-1, *, event_filter=None)`
 
 Generator of `Alert` objects.
 
@@ -467,7 +576,10 @@ Generator of `Alert` objects.
   it waits for the next alert. Internally it polls in `poll_interval` slices,
   so Ctrl-C stays responsive.
 - `timeout=N` (seconds): ends after N seconds without a new alert, so your
-  program can do something else between bursts.
+  program can do something else between bursts. With an `event_filter`, every
+  alert the broker delivers restarts the wait, whether or not it passes.
+- `event_filter`: an `EventFilter` or a filter dictionary; only the alerts that
+  pass it are yielded. See [Filtering the stream](#filtering-the-stream).
 
 ```python
 # Continuous listener — this is the normal case
@@ -517,10 +629,27 @@ Client(
 | `get_source_summary(name)` | summary `dict`, or `None` | free |
 | `latest_transients(*, start, end, event_filter=None, use_saved_filters=False, optional_parameters=(), include_watchlist=False, return_format="json")` | results `dict`, or `str` for `"votable"` and `"url"` | counts |
 | `cone_search(*, ra, dec, radius, start, end, contour_trigger_id=None, contour_margin=None, event_filter=None, use_saved_filters=False, optional_parameters=(), include_watchlist=False, return_format="json")` | results `dict`, or `str` for `"votable"` and `"url"` | counts |
+| `get_saved_filters()` | the filters saved in the app, as a filter `dict` | counts |
 | `close()` | | |
 
 Every method also accepts `timeout=`. `Client` is a context manager. Like the
 `requests.Session` it holds, it is not thread-safe: use one per thread.
+
+### `EventFilter`
+
+```python
+EventFilter(spec: dict)                                   # a filter dictionary
+EventFilter.from_file(path)                               # a filter file
+EventFilter.from_saved_filters(uid=None, *, client=None)  # your app filters
+```
+
+| Method | Returns |
+|---|---|
+| `matches(event)` | `True` if the event passes. Takes an event `dict`, an `Alert` from either kind of topic, or a parsed Astro-COLIBRI `VOEvent` |
+| `filter(items)` | Generator of the items that pass, unchanged: alerts, raw Kafka messages, VOEvents or event dicts |
+| `to_dict()` | The filter dictionary |
+
+See [Filtering the stream](#filtering-the-stream).
 
 ### `parse_voevent(document)`
 

@@ -15,9 +15,10 @@ Run:
 from __future__ import annotations
 
 import importlib.util
+import json
 from datetime import timedelta
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -117,6 +118,7 @@ def test_every_example_is_covered():
         "cone_search",
         "contour_search",
         "parse_voevent",
+        "filter_stream",
     }
 
 
@@ -249,7 +251,9 @@ class TestContourSearch:
             "min": "2023-05-18T12:59:08+00:00",
             "max": "2023-05-25T12:59:08+00:00",
         }
-        assert "90% contour" in capsys.readouterr().out
+        assert (
+            "Searched the localization contour of S230518h" in capsys.readouterr().out
+        )
 
     def test_reports_the_circle_fallback(self, api, uid, capsys):
         api.request.side_effect = [
@@ -304,3 +308,65 @@ class TestParseVoevent:
         )
         assert load("parse_voevent").main("NOPE") == 1
         assert "Could not read a VOEvent from 'NOPE'" in capsys.readouterr().out
+
+
+GRB_ONLY = {
+    "type": "FieldSpecification",
+    "field": "type",
+    "operation": "==",
+    "typeField": "string",
+    "value": "grb",
+}
+
+
+def broker_message(payload, topic="astrocolibri.all.JSON"):
+    msg = MagicMock()
+    msg.value.return_value = (
+        json.dumps(payload).encode("utf-8") if isinstance(payload, dict) else payload
+    )
+    msg.topic.return_value = topic
+    msg.error.return_value = None
+    return msg
+
+
+@pytest.fixture
+def broker():
+    """The mocked Kafka consumer behind the example's Consumer."""
+    with patch("astrocolibri.consumer._ConfluentConsumer") as consumer_cls:
+        kafka = consumer_cls.return_value
+        kafka.consume.side_effect = [
+            [broker_message(XRT), broker_message(GW)],
+            [],
+        ]
+        yield kafka
+
+
+class TestFilterStream:
+    def test_applies_the_saved_app_filters(self, api, uid, broker, capsys):
+        api.request.return_value = make_response(200, {"filter": GRB_ONLY})
+        assert load("filter_stream").main(timeout=0.1) == 0
+        out = capsys.readouterr().out
+        assert "922968  type=grb" in out
+        assert "S230518h" not in out
+        assert api.request.call_args[0][1].endswith("/saved_filters")
+        broker.subscribe.assert_called_once()
+
+    def test_applies_a_filter_file_without_a_uid(self, api, broker, tmp_path, capsys):
+        path = tmp_path / "Astro-COLIBRI_filters.json"
+        path.write_text(json.dumps(GRB_ONLY), encoding="utf-8")
+        assert load("filter_stream").main(str(path), timeout=0.1) == 0
+        assert "922968" in capsys.readouterr().out
+        api.request.assert_not_called()
+
+    def test_no_saved_filters(self, api, uid, broker, capsys):
+        api.request.return_value = make_response(
+            404, {"message": "No saved filters for this user", "status_code": 404}
+        )
+        assert load("filter_stream").main(timeout=0.1) == 1
+        assert "No filters are saved" in capsys.readouterr().out
+        broker.subscribe.assert_not_called()
+
+    def test_missing_uid_explains_the_setup(self, api, broker, capsys):
+        assert load("filter_stream").main(timeout=0.1) == 1
+        assert "ASTROCOLIBRI_UID" in capsys.readouterr().out
+        api.request.assert_not_called()

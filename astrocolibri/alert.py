@@ -4,7 +4,7 @@ astrocolibri/alert.py
 Decoded Astro-Colibri alert.
 
 Kafka carries raw bytes, so a `confluent_kafka.Message` hands back
-`b'{"id": "..."}'` rather than anything you can work with. `Alert` wraps
+`b'{"trigger_id": "..."}'` rather than anything you can work with. `Alert` wraps
 that message and gives you the payload already decoded: a `dict` for the
 JSON topics, an XML `str` for the VOEvent topics. `voevent()` goes one step
 further and parses a VOEvent document into a `VOEvent` object.
@@ -72,7 +72,7 @@ class Alert:
 
         for alert in consumer.consume():
             data = alert.value()        # dict on a .JSON topic
-            print(data["id"], data["ra"], data["dec"])
+            print(data["trigger_id"], data["ra"], data["dec"])
 
         for alert in consumer.consume():
             xml = alert.value()         # str on a .VOEvent topic
@@ -259,6 +259,41 @@ class Alert:
         except AstrocolibriDecodeError as exc:
             raise AstrocolibriDecodeError(f"{self._where()}: {exc}") from exc
 
+    def event(self) -> Dict[str, Any]:
+        """
+        The event in Astro-COLIBRI's own JSON structure, whatever the topic.
+
+        On a JSON topic this is :meth:`value`. On a VOEvent topic the
+        document is converted back with :meth:`VOEvent.to_colibri_event`, so
+        the same code (and the same :class:`~astrocolibri.EventFilter`)
+        handles both streams.
+
+        Example::
+
+            for alert in consumer.consume():
+                event = alert.event()
+                print(event["trigger_id"], event["type"], event["ra"], event["dec"])
+
+        Raises:
+            AstrocolibriDecodeError: If the payload is not valid UTF-8, not
+                a JSON object or VOEvent document, or a VOEvent that
+                Astro-COLIBRI did not write.
+        """
+        if self.format == FORMAT_VOEVENT:
+            document = self.voevent()
+            try:
+                return document.to_colibri_event()
+            except AstrocolibriDecodeError as exc:
+                raise AstrocolibriDecodeError(f"{self._where()}: {exc}") from exc
+
+        value = self.value() if self.format == FORMAT_JSON else self.json()
+        if not isinstance(value, dict):
+            raise AstrocolibriDecodeError(
+                f"{self._where()}: payload is a JSON {type(value).__name__}, "
+                f"not an Astro-COLIBRI event"
+            )
+        return value
+
     @property
     def format(self) -> str:
         """
@@ -280,6 +315,34 @@ class Alert:
                 else:
                     self._format = _sniff_format(payload)
         return self._format
+
+    @property
+    def important(self) -> Optional[bool]:
+        """
+        Whether this alert is also published on ``astrocolibri.important.*``.
+
+        Lets a subscriber to ``astrocolibri.all.*`` pick out the alerts the
+        important stream carries without subscribing to both. Read from the
+        broker's ``important`` header, so the payload is not decoded.
+
+        Example::
+
+            consumer.subscribe(["astrocolibri.all.JSON"])
+            for alert in consumer.consume():
+                if alert.important:
+                    print("important:", alert.value()["trigger_id"])
+
+        Returns:
+            ``True`` or ``False``, or ``None`` if the message carries no
+            ``important`` header (it was not published by Astro-COLIBRI).
+        """
+        topic = self._message.topic() or ""
+        if topic.startswith("astrocolibri.important."):
+            return True
+        flag = self.headers().get("important")
+        if flag is None:
+            return None
+        return flag.strip().lower() == "true"
 
     @property
     def raw(self) -> Optional[bytes]:

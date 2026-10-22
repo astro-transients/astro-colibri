@@ -12,7 +12,7 @@ this package — there is no Producer here, and there never will be.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Generator, List, Optional, Union
+from typing import Any, Dict, Generator, Iterator, List, Mapping, Optional, Union
 
 from confluent_kafka import Consumer as _ConfluentConsumer
 from confluent_kafka import KafkaError, KafkaException, Message
@@ -23,6 +23,7 @@ from .exceptions import (
     AstrocolibriConfigError,
     AstrocolibriKafkaError,
 )
+from .filtering import EventFilter
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,7 @@ class Consumer:
             # Runs forever, waiting for the next alert.
             for alert in consumer.consume():
                 data = alert.value()
-                print(data["id"], data["ra"], data["dec"])
+                print(data["trigger_id"], data["ra"], data["dec"])
 
     Batch mode — return control between bursts of alerts::
 
@@ -291,7 +292,9 @@ class Consumer:
         self,
         num_messages: int = 1,
         timeout: float = -1,
-    ) -> Generator[Union[Alert, Message], None, None]:
+        *,
+        event_filter: Union[EventFilter, Mapping[str, Any], None] = None,
+    ) -> Iterator[Union[Alert, Message]]:
         """
         Consume alerts from the subscribed topics, one at a time.
 
@@ -312,7 +315,14 @@ class Consumer:
                   ``poll_interval`` slices so Ctrl-C stays responsive.
                 - ``> 0``: stop after ``timeout`` seconds without a new
                   alert. Use this when your program has other work to do
-                  between bursts — wrap it in ``while True:``.
+                  between bursts — wrap it in ``while True:``. With an
+                  ``event_filter``, the wait restarts with every alert the
+                  broker delivers, whether or not it passes the filter.
+            event_filter:
+                Yield only the alerts whose event passes this filter: an
+                :class:`~astrocolibri.EventFilter`, or a filter dictionary.
+                It works the same on the JSON and the VOEvent topics.
+                Heartbeats always pass. See :meth:`EventFilter.filter`.
 
         Yields:
             :class:`~astrocolibri.alert.Alert` — payload already decoded:
@@ -334,6 +344,8 @@ class Consumer:
 
         Raises:
             AstrocolibriKafkaError: On an unrecoverable Kafka error.
+            AstrocolibriConfigError: At the call, if ``event_filter`` is not
+                a valid filter.
 
         Examples:
 
@@ -341,7 +353,7 @@ class Consumer:
 
                 for alert in consumer.consume():
                     data = alert.value()
-                    print(data["id"], data["type"])
+                    print(data["trigger_id"], data["type"])
 
             Batch mode, to do other work between alerts::
 
@@ -349,7 +361,26 @@ class Consumer:
                     for alert in consumer.consume(timeout=5.0):
                         handle(alert.value())
                     check_app_state()
+
+            Only the events your Astro-COLIBRI app filters let through::
+
+                my_filter = EventFilter.from_saved_filters()
+                for alert in consumer.consume(event_filter=my_filter):
+                    event = alert.event()
+                    print(event["trigger_id"], event["type"])
         """
+        # Checked here, not on the first alert: a typo in a filter should
+        # fail before the program settles down to listen.
+        if event_filter is None:
+            return self._consume(num_messages, timeout)
+        if not isinstance(event_filter, EventFilter):
+            event_filter = EventFilter(event_filter)
+        return event_filter.filter(self._consume(num_messages, timeout))
+
+    def _consume(
+        self, num_messages: int, timeout: float
+    ) -> Generator[Union[Alert, Message], None, None]:
+        """Every alert of the subscribed topics; see :meth:`consume`."""
         listen_forever = timeout is None or timeout < 0
         poll_timeout = self._poll_interval if listen_forever else timeout
 

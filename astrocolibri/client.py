@@ -89,11 +89,11 @@ class Client:
     or around a sky position, through the public Astro-COLIBRI API.
 
     Event and source lookups are free. The two searches,
-    :meth:`latest_transients` and :meth:`cone_search`, need your
-    Astro-COLIBRI user ID and count against a daily per-account quota (100
-    requests at the time of writing). An identical search repeated within
-    the same half hour is normally answered from the API's cache and does not
-    count again.
+    :meth:`latest_transients` and :meth:`cone_search`, and
+    :meth:`get_saved_filters` need your Astro-COLIBRI user ID and count
+    against a daily per-account quota (100 requests at the time of writing).
+    An identical search repeated within the same half hour is normally
+    answered from the API's cache and does not count again.
 
     Get your user ID from https://astro-colibri.com/account, then either
     export it::
@@ -628,8 +628,10 @@ class Client:
                 Search inside this event's 90% localization contour instead
                 of the circle, for events with extended localizations such as
                 gravitational waves, Fermi/GBM and IPN bursts, IceCube
-                neutrinos or MAXI transients. If the event has no stored
-                contour, the API falls back to the circle.
+                neutrinos or MAXI transients. Events that store a single
+                region are searched inside it: 99% for IPN bursts, the
+                containment level of the notice for MAXI. If the event has
+                no stored contour, the API falls back to the circle.
                 ``"search_region"`` in the result says which was used.
             contour_margin:
                 Degrees, within [0, 20], by which to widen the contour. Only
@@ -646,7 +648,8 @@ class Client:
             With ``return_format="json"``, a dict of result groups:
             ``"voevents"`` holds the transient events, ``"sources"``,
             ``"Xsources"`` and ``"icecat"`` hold catalog matches, and
-            ``"search_region"`` is ``"circle"`` or ``"contour_90"``.
+            ``"search_region"`` is ``"circle"`` or ``"contour_90"`` (any
+            contour search, whatever the level of the region).
             Catalog sources are not constrained by the time window.
 
         Raises:
@@ -700,6 +703,63 @@ class Client:
             timeout=timeout,
             properties=properties,
         )
+
+    # ── Saved filters ────────────────────────────────────────────────────────
+
+    def get_saved_filters(self, *, timeout: Optional[float] = None) -> Dict[str, Any]:
+        """
+        The filters saved in the Astro-COLIBRI app for your account.
+
+        Needs a user ID and counts once against your daily API quota. The
+        result is a single API filter dictionary: pass it as
+        ``event_filter`` to a search, or to :class:`~astrocolibri.EventFilter`
+        to filter broker alerts with it. :meth:`EventFilter.from_saved_filters`
+        does the latter in one step.
+
+        Args:
+            timeout:
+                Seconds before the request is abandoned. Defaults to the
+                client's timeout.
+
+        Returns:
+            The filter dictionary, as the API applies it when a search is
+            sent with ``use_saved_filters=True``.
+
+        Raises:
+            AstrocolibriAuthError: If no user ID is configured, or the API
+                does not accept it.
+            AstrocolibriNotFoundError: If no filters were ever saved in the
+                app for this account.
+            AstrocolibriRateLimitError: If the daily quota is exhausted.
+            AstrocolibriAPIError: If the API fails otherwise.
+            AstrocolibriTransportError: If the API cannot be reached.
+
+        Example::
+
+            saved = client.get_saved_filters()
+            results = client.latest_transients(
+                start="2026-09-01T00:00:00Z",
+                end="2026-09-02T00:00:00Z",
+                event_filter=saved,
+            )
+        """
+        uid = self._require_uid("get_saved_filters()")
+        # The user ID goes in the body: a query string would put it in logs.
+        payload = self._request_json(
+            "POST",
+            "/saved_filters",
+            json_body={"uid": uid},
+            timeout=timeout,
+            not_found=(
+                "No filters are saved for your account. Set them up in the "
+                "Astro-COLIBRI app, or build the filter from a filter "
+                "dictionary or an exported filter file instead."
+            ),
+        )
+        spec = payload.get("filter") if isinstance(payload, dict) else None
+        if not isinstance(spec, dict) or not spec:
+            raise self._malformed("/saved_filters", payload)
+        return spec
 
     # ── Lifecycle ────────────────────────────────────────────────────────────
 

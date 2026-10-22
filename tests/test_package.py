@@ -40,6 +40,7 @@ class TestPublicSurface:
         for name in (
             "Consumer",
             "Client",
+            "EventFilter",
             "TOPICS",
             "OPTIONAL_PARAMETERS",
             "parse_voevent",

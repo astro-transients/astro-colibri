@@ -12,8 +12,10 @@ Run:
 Localizations of gravitational waves, Fermi/GBM and IPN bursts, IceCube
 neutrinos and MAXI transients are far from circular. Passing an event's
 trigger ID as contour_trigger_id searches inside its 90% localization contour
-instead of a circle. If no contour is stored for the event, the API searches
-the circle, and the result's "search_region" says which of the two was used.
+instead of a circle, or inside its only region for events that store one (99%
+for IPN bursts, the containment level of the notice for MAXI). If no contour is
+stored for the event, the API searches the circle, and the result's
+"search_region" says which of the two was used.
 
 Looking up the event is free; the search counts once against your quota.
 """
@@ -66,7 +68,9 @@ def main(trigger_id: str) -> int:
             return 1
 
     if results.get("search_region") == "contour_90":
-        print(f"Searched the 90% contour of {trigger_id}, widened by {MARGIN:g}°.")
+        print(
+            f"Searched the localization contour of {trigger_id}, widened by {MARGIN:g}°."
+        )
     else:
         print(
             f"No contour is stored for {trigger_id}: searched a {FALLBACK_RADIUS}° circle "

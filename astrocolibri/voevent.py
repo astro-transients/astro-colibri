@@ -242,6 +242,98 @@ class VOEvent:
             values.setdefault(param.name, param.value)
         return values
 
+    def to_colibri_event(self) -> Dict[str, Any]:
+        """
+        The event in Astro-COLIBRI's own JSON structure.
+
+        The inverse of the conversion Astro-COLIBRI applies when it publishes
+        a VOEvent: the result has the same field names and value types as an
+        alert on the ``astrocolibri.*.JSON`` topics and an event returned by
+        the API, so code (and an :class:`~astrocolibri.EventFilter`) written
+        for one works on the other.
+
+        The VOEvent leaves out what it cannot or should not carry, so neither
+        does the result:
+
+        - fields that are unset: a negative numeric placeholder (``-1``) or
+          an empty text. Code that reads ``event.get("redshift", -1)`` sees
+          the same value either way. An event without a usable position gets
+          ``ra``, ``dec`` and ``err`` set to ``-1.0``, as on the JSON topics.
+        - ``gw_contours`` and ``archive``, which are large: ask the API for
+          them with ``optional_parameters``.
+        - ``time`` is rounded to the millisecond, and ``timestamp`` is
+          derived from it.
+
+        Returns:
+            A new ``dict`` on every call.
+
+        Raises:
+            AstrocolibriDecodeError: If the document was not written by
+                Astro-COLIBRI, such as a GCN notice: those have no
+                Astro-COLIBRI event behind them.
+
+        Example::
+
+            event = alert.voevent().to_colibri_event()
+            print(event["trigger_id"], event["type"], event["ra"], event["dec"])
+        """
+        if not self.is_astro_colibri:
+            raise AstrocolibriDecodeError(
+                f"{self.ivorn} was not written by Astro-COLIBRI "
+                f"(author {self.author_ivorn or 'unknown'}), so it has no "
+                f"Astro-COLIBRI event to convert back to"
+            )
+
+        event: Dict[str, Any] = {}
+        map_areas: Dict[str, Any] = {}
+        for param in self.iter_params():
+            name, value = param.name, param.value
+            if name == "original_ivorn":
+                name = "ivorn"
+            elif name.startswith(_AREA_PREFIX):
+                map_areas.setdefault(name[len(_AREA_PREFIX) :], value)
+                continue
+            elif name in _BOOLEAN_FIELDS and isinstance(value, str):
+                value = value.strip().lower() == "true"
+            event.setdefault(name, value)
+            if name == "transient_flux" and param.unit:
+                event.setdefault("transient_flux_units", param.unit)
+        if map_areas:
+            event["map_areas"] = map_areas
+
+        if self.position is not None:
+            event["ra"] = self.position.ra
+            event["dec"] = self.position.dec
+            if "err" not in event and self.position.err is not None:
+                event["err"] = self.position.err
+        else:
+            event["ra"] = event["dec"] = -1.0
+        event.setdefault("err", -1.0)
+
+        iso_time = _text(
+            self.root.find(
+                "WhereWhen/ObsDataLocation/ObservationLocation/AstroCoords"
+                "/Time/TimeInstant/ISOTime"
+            )
+        )
+        if iso_time is not None:
+            event["time"] = iso_time
+        if self.time is not None and self.time.tzinfo is not None:
+            event["timestamp"] = float(round(self.time.timestamp() * 1000.0))
+
+        comment = _text(self.root.find("Why/Inference/Description"))
+        if comment is not None:
+            event.setdefault("comment", comment)
+        return event
+
+
+# Astro-COLIBRI writes each credible-region area of ``map_areas`` as its own
+# Param, ``area_<level>`` (``area_90``).
+_AREA_PREFIX = "area_"
+
+# Booleans travel as "true"/"false" text: VOEvent Params have no boolean type.
+_BOOLEAN_FIELDS = frozenset({"slew"})
+
 
 def parse_voevent(document: Union[str, bytes]) -> VOEvent:
     """

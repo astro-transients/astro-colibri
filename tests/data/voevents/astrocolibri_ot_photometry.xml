@@ -1,0 +1,113 @@
+<?xml version="1.0" ?>
+<voe:VOEvent xmlns:voe="http://www.ivoa.net/xml/VOEvent/v2.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ivorn="ivo://AstroCOLIBRI/TNS_OT_SN_TNS2025mq_20250214T081500" role="observation" version="2.0" xsi:schemaLocation="http://www.ivoa.net/xml/VOEvent/v2.0 http://www.ivoa.net/xml/VOEvent/VOEvent-v2.0.xsd">
+  <Who>
+    <AuthorIVORN>ivo://AstroCOLIBRI</AuthorIVORN>
+    <Author>
+      <contactName>Astro-COLIBRI</contactName>
+      <contactEmail>astro.colibri@gmail.com</contactEmail>
+    </Author>
+    <Date>2026-10-14T12:52:43</Date>
+    <Description>This VOEvent was created by Astro-COLIBRI by converting the internal event JSON format.</Description>
+  </Who>
+  <What>
+    <Group name="Identifiers">
+      <Param name="trigger_id" value="TNS2025mq" ucd="meta.id"/>
+      <Param name="source_name" value="SN 2025mq" ucd="meta.id"/>
+      <Param name="astro_colibri_id" value="AC2025mq" ucd="meta.id"/>
+      <Param name="identifier" value="SN2025mq" ucd="meta.id"/>
+      <Param name="original_ivorn" value="ivo://AstroCOLIBRI/TNS_OT_SN_TNS2025mq_20250214T081500" ucd="meta.id"/>
+      <Param name="discoverer_internal_name" value="ZTF25aaxyzab" ucd="meta.id"/>
+      <Param name="ivorn_history" value="[&quot;ivo://tns/2025mq#1&quot;, &quot;ivo://tns/2025mq#2&quot;]">
+        <Description>IVORNs of the notices merged into this event.</Description>
+      </Param>
+    </Group>
+    <Group name="Classification">
+      <Param name="observatory" value="ztf" ucd="meta.id"/>
+      <Param name="type" value="ot_sn" ucd="meta.code.class"/>
+      <Param name="classification" value="SN Ia" ucd="meta.code.class"/>
+      <Param name="alert_type" value="classification" ucd="meta.code"/>
+      <Param name="broker" value="TNS" ucd="meta.code"/>
+      <Param name="follow_up" value="[&quot;rapas&quot;, &quot;bhtom&quot;]">
+        <Description>Follow-up observatories known to Astro-COLIBRI.</Description>
+      </Param>
+    </Group>
+    <Group name="Measurements">
+      <Param name="redshift" value="0.0213" ucd="src.redshift" dataType="float"/>
+      <Param name="transient_flux" value="17.8" unit="mag" ucd="phot.flux" dataType="float"/>
+      <Param name="transient_flux_error" value="0.05" unit="mag" ucd="stat.error" dataType="float"/>
+      <Param name="sun_distance" value="101.5" unit="deg" ucd="pos.angDistance" dataType="float"/>
+      <Param name="extinction_ebv" value="0.023" ucd="phys.absorption" dataType="float"/>
+      <Param name="transient_flux_band" value="ztf_r">
+        <Description>Band or filter corresponding to transient_flux.</Description>
+      </Param>
+    </Group>
+    <Group name="Photometry">
+      <Param name="photometry" value="{&quot;atlas_o&quot;: {&quot;last&quot;: {&quot;mag&quot;: 18.1, &quot;mag_err&quot;: 0.07, &quot;time&quot;: &quot;2025-03-11T11:02:00&quot;}}, &quot;ztf_g&quot;: {&quot;first&quot;: {&quot;mag&quot;: 19.21, &quot;mag_err&quot;: 0.09, &quot;time&quot;: &quot;2025-02-14T08:15:00&quot;}, &quot;last&quot;: {&quot;mag&quot;: 18.34, &quot;mag_err&quot;: 0.05, &quot;time&quot;: &quot;2025-03-10T06:55:00&quot;}, &quot;peak&quot;: {&quot;mag&quot;: 17.52, &quot;mag_err&quot;: 0.03, &quot;time&quot;: &quot;2025-02-27T07:40:00&quot;}}, &quot;ztf_r&quot;: {&quot;first&quot;: {&quot;mag&quot;: 19.05, &quot;mag_err&quot;: 0.08, &quot;time&quot;: &quot;2025-02-14T08:20:00&quot;}, &quot;last&quot;: {&quot;mag&quot;: 17.98, &quot;mag_err&quot;: 0.04, &quot;time&quot;: &quot;2025-03-10T07:01:00&quot;}, &quot;peak&quot;: {&quot;mag&quot;: 17.61, &quot;mag_err&quot;: 0.03, &quot;time&quot;: &quot;2025-02-28T07:35:00&quot;}}}">
+        <Description>First, peak and last detection per band: time and magnitude.</Description>
+      </Param>
+    </Group>
+    <Group name="Context">
+      <Param name="constellation" value="Virgo"/>
+      <Param name="slew" value="false">
+        <Description>Whether the spacecraft slewed to the alert position.</Description>
+      </Param>
+      <Param name="ivorn_time" value="2025-02-20T10:02:11">
+        <Description>Issue time of the latest notice merged into this event.</Description>
+      </Param>
+      <Param name="last_modified" value="2025-02-20T10:05:40">
+        <Description>When Astro-COLIBRI last updated this event.</Description>
+      </Param>
+    </Group>
+    <Group name="Links">
+      <Param name="url" value="https://www.wis-tns.org/object/2025mq" ucd="meta.ref.url">
+        <Reference uri="https://www.wis-tns.org/object/2025mq" type="url"/>
+      </Param>
+      <Param name="lc_url" value="https://storage.googleapis.com/example/TNS2025mq_lc.png" ucd="meta.ref.url">
+        <Reference uri="https://storage.googleapis.com/example/TNS2025mq_lc.png" type="url"/>
+      </Param>
+      <Param name="url_name" value="TNS">
+        <Description>Display name of the url Param.</Description>
+      </Param>
+      <Param name="image_urls" value="{&quot;finder&quot;: &quot;https://storage.googleapis.com/example/TNS2025mq_finder.png&quot;}">
+        <Description>Image links by name.</Description>
+      </Param>
+    </Group>
+  </What>
+  <WhereWhen>
+    <ObsDataLocation>
+      <ObservatoryLocation id="ZTF"/>
+      <ObservationLocation>
+        <AstroCoordSystem id="UTC-FK5-GEO"/>
+        <AstroCoords coord_system_id="UTC-FK5-GEO">
+          <Time unit="s">
+            <TimeInstant>
+              <ISOTime>2025-02-14T08:15:00.000</ISOTime>
+            </TimeInstant>
+          </Time>
+          <Position2D unit="deg">
+            <Name1>RA</Name1>
+            <Name2>Dec</Name2>
+            <Value2>
+              <C1>187.70593</C1>
+              <C2>12.39112</C2>
+            </Value2>
+            <Error2Radius>0</Error2Radius>
+          </Position2D>
+        </AstroCoords>
+      </ObservationLocation>
+    </ObsDataLocation>
+    <Description>The RA,Dec coordinates are of the type: source_object.</Description>
+  </WhereWhen>
+  <How>
+    <Description>ztf / TNS</Description>
+    <Reference uri="https://astro-colibri.com/event:TNS2025mq" type="url"/>
+  </How>
+  <Why importance="1.000">
+    <Inference probability="1.000">
+      <Concept>process.variation.transient;em.opt</Concept>
+      <Name>SN 2025mq</Name>
+      <Description>Type Ia supernova in NGC 4501</Description>
+    </Inference>
+  </Why>
+  <Description>Type Ia supernova in NGC 4501</Description>
+</voe:VOEvent>

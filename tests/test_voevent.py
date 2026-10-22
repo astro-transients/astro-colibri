@@ -309,3 +309,93 @@ class TestSkyCoord:
         assert icrs.frame.name == "icrs"
         assert fk5.ra.deg == pytest.approx(171.74)
         assert icrs.dec.deg == pytest.approx(-17.7566)
+
+
+class TestToColibriEvent:
+    """The VOEvent turned back into Astro-COLIBRI's internal JSON structure."""
+
+    @pytest.fixture
+    def sn(self):
+        return load("astrocolibri_ot_photometry").to_colibri_event()
+
+    def test_identifiers_keep_their_names(self, sn):
+        assert sn["trigger_id"] == "TNS2025mq"
+        assert sn["astro_colibri_id"] == "AC2025mq"
+        assert sn["discoverer_internal_name"] == "ZTF25aaxyzab"
+        # original_ivorn is how the VOEvent names the event's own ivorn.
+        assert sn["ivorn"] == "ivo://AstroCOLIBRI/TNS_OT_SN_TNS2025mq_20250214T081500"
+        assert "original_ivorn" not in sn
+
+    def test_lists_and_objects_are_decoded(self, sn):
+        assert sn["follow_up"] == ["rapas", "bhtom"]
+        assert sn["ivorn_history"] == ["ivo://tns/2025mq#1", "ivo://tns/2025mq#2"]
+        assert sn["image_urls"] == {
+            "finder": "https://storage.googleapis.com/example/TNS2025mq_finder.png"
+        }
+
+    def test_photometry_is_the_internal_structure(self, sn):
+        assert set(sn["photometry"]) == {"ztf_g", "ztf_r", "atlas_o"}
+        assert sn["photometry"]["ztf_g"]["peak"] == {
+            "time": "2025-02-27T07:40:00",
+            "mag": 17.52,
+            "mag_err": 0.03,
+        }
+
+    def test_measurements_and_their_units(self, sn):
+        assert sn["redshift"] == pytest.approx(0.0213)
+        assert sn["transient_flux"] == pytest.approx(17.8)
+        assert sn["transient_flux_units"] == "mag"
+        assert sn["transient_flux_band"] == "ztf_r"
+        # Unset measurements (-1) are not published, as on the JSON topics
+        # a filter then reads them as -1.
+        assert "significance" not in sn
+
+    def test_position_time_and_comment(self, sn):
+        assert (sn["ra"], sn["dec"]) == (187.70593, 12.39112)
+        # No error radius was given: the internal placeholder, not 0.
+        assert sn["err"] == -1.0
+        assert sn["time"] == "2025-02-14T08:15:00.000"
+        assert sn["timestamp"] == 1739520900000.0
+        assert sn["comment"] == "Type Ia supernova in NGC 4501"
+
+    def test_context_fields(self, sn):
+        assert sn["slew"] is False
+        assert sn["constellation"] == "Virgo"
+        assert sn["last_modified"] == "2025-02-20T10:05:40"
+        assert sn["url_name"] == "TNS"
+
+    def test_map_areas_are_regrouped(self):
+        gw = load("astrocolibri_gw_S230518h").to_colibri_event()
+        assert gw["map_areas"] == {"50": 131.0, "90": 436.0}
+        assert not any(name.startswith("area_") for name in gw)
+        assert gw["gw_hasNS"] == 1.0
+        assert gw["pkt_ser_num"] == 4
+        assert gw["follow_up"][0] == "icecube neutrino observatory"
+
+    def test_documents_older_than_the_photometry_group_still_convert(self):
+        grb = load("astrocolibri_grb_190829A_swift").to_colibri_event()
+        assert grb["type"] == "grb"
+        assert "photometry" not in grb
+
+    def test_missing_position_reads_as_the_internal_placeholder(self):
+        document = (
+            '<voe:VOEvent xmlns:voe="http://www.ivoa.net/xml/VOEvent/v2.0" '
+            'ivorn="ivo://AstroCOLIBRI/X" role="test" version="2.0">'
+            "<Who><AuthorIVORN>ivo://AstroCOLIBRI</AuthorIVORN></Who>"
+            '<What><Group name="Identifiers"><Param name="trigger_id" value="X"/>'
+            "</Group></What></voe:VOEvent>"
+        )
+        event = parse_voevent(document).to_colibri_event()
+        assert event == {"trigger_id": "X", "ra": -1.0, "dec": -1.0, "err": -1.0}
+
+    def test_each_call_returns_a_new_dict(self):
+        document = load("astrocolibri_ot_photometry")
+        first = document.to_colibri_event()
+        first["photometry"] = None
+        assert document.to_colibri_event()["photometry"] is not None
+
+    def test_gcn_notice_has_no_internal_event(self):
+        with pytest.raises(
+            AstrocolibriDecodeError, match="not written by Astro-COLIBRI"
+        ):
+            load("gcn_fermi_gbm_fin_pos").to_colibri_event()

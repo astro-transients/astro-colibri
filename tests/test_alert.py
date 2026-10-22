@@ -14,6 +14,7 @@ Run:
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -33,6 +34,8 @@ VOEVENT_XML = (
     'ivorn="ivo://astro-colibri/AC-001"><Who/></voe:VOEvent>'
 )
 
+
+VOEVENTS = Path(__file__).resolve().parent / "data" / "voevents"
 
 #: Sentinel so a test can ask for a message with no payload at all.
 _DEFAULT = object()
@@ -274,6 +277,18 @@ class TestMetadataAccessors:
         alert = Alert(make_message(headers=[("update_type", None)]))
         assert alert.headers() == {"update_type": ""}
 
+    @pytest.mark.parametrize(("flag", "expected"), [(b"true", True), (b"false", False)])
+    def test_important_reads_the_header_on_the_all_stream(self, flag, expected):
+        alert = Alert(make_message(headers=[("important", flag)]))
+        assert alert.important is expected
+
+    def test_an_alert_on_the_important_stream_is_important(self):
+        alert = Alert(make_message(topic="astrocolibri.important.VOEvent"))
+        assert alert.important is True
+
+    def test_important_is_unknown_without_the_header(self):
+        assert Alert(make_message(headers=None)).important is None
+
     def test_key_may_already_be_a_str(self):
         assert Alert(make_message(key="AC-001")).key() == "AC-001"
 
@@ -294,3 +309,38 @@ class TestMetadataAccessors:
         assert "astrocolibri.all.JSON" in text
         assert "42" in text
         assert FORMAT_JSON in text
+
+
+class TestEvent:
+    """alert.event(): the internal JSON structure, whatever the topic."""
+
+    def test_json_topic_returns_the_payload(self):
+        alert = Alert(make_message())
+        assert alert.event() == ALERT_JSON
+        assert alert.event() is alert.value()
+
+    def test_voevent_topic_is_converted_back(self):
+        xml = (VOEVENTS / "astrocolibri_ot_photometry.xml").read_bytes()
+        event = Alert(make_message(xml, topic="astrocolibri.all.VOEvent")).event()
+        assert event["trigger_id"] == "TNS2025mq"
+        assert event["photometry"]["ztf_r"]["last"]["mag"] == 17.98
+        assert (event["ra"], event["dec"]) == (187.70593, 12.39112)
+
+    def test_json_that_is_not_an_object_raises(self):
+        alert = Alert(make_message(b"[1, 2]"))
+        with pytest.raises(
+            AstrocolibriDecodeError, match=r"partition=0, offset=42.*list"
+        ):
+            alert.event()
+
+    def test_foreign_voevent_raises_and_names_the_record(self):
+        xml = (VOEVENTS / "gcn_fermi_gbm_fin_pos.xml").read_bytes()
+        alert = Alert(make_message(xml, topic="astrocolibri.all.VOEvent"))
+        with pytest.raises(AstrocolibriDecodeError) as excinfo:
+            alert.event()
+        assert str(excinfo.value).startswith("astrocolibri.all.VOEvent[partition=0")
+        assert "not written by Astro-COLIBRI" in str(excinfo.value)
+
+    def test_unannounced_topic_is_sniffed(self):
+        alert = Alert(make_message(b' {"trigger_id": "X"}', topic="custom"))
+        assert alert.event() == {"trigger_id": "X"}

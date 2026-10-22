@@ -44,7 +44,7 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
-from astrocolibri import Consumer
+from astrocolibri import Consumer, EventFilter
 
 requests = pytest.importorskip(
     "requests", reason="requests is required to drive the API round trip"
@@ -193,5 +193,21 @@ def test_api_update_arrives_on_the_broker_test_topic(config):
         assert isinstance(payload, dict)
         assert payload.get("trigger_id") == config["trigger_id"]
         assert payload.get("last_modified") == marker
+
+        # A live payload, not a fixture: what subscribers filter in practice.
+        this_event = EventFilter(
+            {
+                "type": "FieldSpecification",
+                "field": "trigger_id",
+                "operation": "==",
+                "typeField": "string",
+                "value": config["trigger_id"],
+            }
+        )
+        assert this_event.matches(alert)
+        assert not EventFilter(
+            {"type": "NotSpecification", "spec": this_event.to_dict()}
+        ).matches(alert)
+        assert alert.event() is payload
     finally:
         consumer.close()

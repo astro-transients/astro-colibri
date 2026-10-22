@@ -8,6 +8,9 @@ Two entry points:
 - :class:`Client` queries the Astro-COLIBRI API: look up events and
   sources, and search for transients by time window or around a position.
 
+:class:`EventFilter` applies Astro-COLIBRI filters (your app filters, an
+exported filter file or a filter dictionary) to either of them.
+
 Broker quick start, a complete listener that runs until you stop it::
 
     from astrocolibri import Consumer
@@ -19,7 +22,7 @@ Broker quick start, a complete listener that runs until you stop it::
         consumer.subscribe(["astrocolibri.all.JSON"])
         for alert in consumer.consume():
             data = alert.value()      # already decoded: a dict here
-            print(data["id"], data["ra"], data["dec"])
+            print(data["trigger_id"], data["ra"], data["dec"])
 
 Payloads arrive decoded, never as raw bytes: ``alert.value()`` is a ``dict``
 on the JSON topics and the XML document as ``str`` on the VOEvent topics.
@@ -29,6 +32,16 @@ same for any VOEvent XML, including GCN notices::
     for alert in consumer.consume():
         event = alert.voevent()       # on an astrocolibri.*.VOEvent topic
         print(event.ivorn, event.time, event.position, event.get("far"))
+
+Only the alerts your Astro-COLIBRI app filters let through, on either kind
+of topic (``alert.event()`` is the event as a ``dict`` on both)::
+
+    from astrocolibri import EventFilter
+
+    my_filter = EventFilter.from_saved_filters()   # reads ASTROCOLIBRI_UID
+    for alert in consumer.consume(event_filter=my_filter):
+        event = alert.event()
+        print(event["trigger_id"], event["type"])
 
 API quick start (your user ID is shown at https://astro-colibri.com/account)::
 
@@ -70,12 +83,14 @@ from .exceptions import (
     AstrocolibriRateLimitError,
     AstrocolibriTransportError,
 )
+from .filtering import EventFilter
 from .voevent import VOEvent, parse_voevent
 
 __all__ = [
     "Consumer",
     "Alert",
     "Client",
+    "EventFilter",
     "TOPICS",
     "OPTIONAL_PARAMETERS",
     "parse_voevent",
