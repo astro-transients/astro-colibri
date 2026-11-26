@@ -5,8 +5,8 @@ Round-trip integration test against the REAL Astro-COLIBRI production broker.
 
 Unlike every other test in this suite, nothing here is mocked. The test asks the
 production API to update a designated test event with `broker_test: true`, then
-consumes the resulting message back off the broker's dedicated `test` topic
-through the public SDK. That round trip is the only way to exercise what the
+consumes the resulting message back off the broker's dedicated `test.JSON`
+topic through the public SDK. That round trip is the only way to exercise what the
 mocked tests cannot: the real SASL_SSL handshake, the per-user ACLs, the topic
 actually existing, and the live publish path.
 
@@ -14,13 +14,14 @@ Side effects on every run, by design:
   - One update is applied to the designated test event through
     /update_voevent_db_from_triggerid_test, which forces `is_test = True` and
     the `VoEvents_test` collection. The live event collections are untouched.
-  - One message is published to the broker's `test` topic. The public
-    `astrocolibri.*` streams are never touched.
+  - One message is published to each topic of the broker's test stream
+    (`test.JSON`, `test.VOEvent`). The public `astrocolibri.*` streams are
+    never touched.
 
 Required environment. The test SKIPS, and never fails, when any is missing:
   KAFKA_USERNAME / KAFKA_PASSWORD  broker SCRAM credentials for a principal
-                                   allowed to READ the `test` topic. That
-                                   topic sits outside the `astrocolibri.`
+                                   allowed to READ the `test.JSON` topic.
+                                   That topic sits outside the `astrocolibri.`
                                    prefix granted to ordinary users, so an
                                    ordinary account cannot read it. Create a
                                    dedicated least-privilege principal with
@@ -52,9 +53,10 @@ requests = pytest.importorskip(
 
 pytestmark = pytest.mark.integration
 
-# Dedicated test topic on the production broker. Deliberately outside the
-# `astrocolibri.` namespace so it can never be confused with a public stream.
-TEST_TOPIC = "test"
+# JSON topic of the dedicated test stream on the production broker (its
+# VOEvent twin is `test.VOEvent`). Deliberately outside the `astrocolibri.`
+# namespace so it can never be confused with a public stream.
+TEST_TOPIC = "test.JSON"
 
 DEFAULT_API_URL = "https://astro-colibri.science"
 UPDATE_PATH = "/update_voevent_db_from_triggerid_test"
@@ -126,7 +128,7 @@ def _trigger_update(cfg: dict, marker: str):
     """
     payload = {
         "trigger_id": cfg["trigger_id"],
-        # Routes this update to the broker's `test` topic instead of the
+        # Routes this update to the broker's test stream instead of the
         # production streams (see VoeventDatabase._build_outbox_document).
         "broker_test": True,
         # Doubles as the change that makes the update real and as this run's

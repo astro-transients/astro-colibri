@@ -119,6 +119,7 @@ def test_every_example_is_covered():
         "contour_search",
         "parse_voevent",
         "filter_stream",
+        "submit_observation_report",
     }
 
 
@@ -370,3 +371,85 @@ class TestFilterStream:
         assert load("filter_stream").main(timeout=0.1) == 1
         assert "ASTROCOLIBRI_UID" in capsys.readouterr().out
         api.request.assert_not_called()
+
+
+class TestSubmitObservationReport:
+    CSV = (
+        "observation_type,filter,magnitude,magnitude_error,time_utc_mid\n"
+        "detection,r,18.21,0.05,2025-10-20T21:14:05Z\n"
+        "upper_limit,g,20.5,,2025-10-20T21:20:00Z\n"
+    )
+    STORED = {
+        "trigger_id": "1234",
+        "source_name": "GRB 251020A",
+        "report_id": "AC 2025abc_1",
+        "observations": 2,
+        "status": "created",
+    }
+
+    @pytest.fixture
+    def photometry(self, tmp_path):
+        path = tmp_path / "photometry.csv"
+        path.write_text(self.CSV, encoding="utf-8")
+        return str(path)
+
+    @pytest.fixture
+    def token(self, monkeypatch):
+        monkeypatch.setenv("ASTROCOLIBRI_API_TOKEN", "colibri_TESTtoken")
+
+    def test_submits_the_csv_rows(self, api, token, photometry, capsys):
+        api.request.return_value = make_response(200, self.STORED)
+        assert (
+            load("submit_observation_report").main("MYOBS", "GRB 251020A", photometry)
+            == 0
+        )
+        body = api.request.call_args[1]["json"]
+        assert body["observatory"] == "MYOBS"
+        assert body["observations"] == [
+            {
+                "observation_type": "detection",
+                "filter": "r",
+                "magnitude": 18.21,
+                "magnitude_error": 0.05,
+                "time_utc_mid": "2025-10-20T21:14:05Z",
+            },
+            {
+                "observation_type": "upper_limit",
+                "filter": "g",
+                "magnitude": 20.5,
+                "time_utc_mid": "2025-10-20T21:20:00Z",
+            },
+        ]
+        assert "Stored report AC 2025abc_1" in capsys.readouterr().out
+
+    def test_resubmission_is_reported(self, api, token, photometry, capsys):
+        api.request.return_value = make_response(
+            200, {**self.STORED, "status": "unchanged"}
+        )
+        assert (
+            load("submit_observation_report").main("MYOBS", "GRB 251020A", photometry)
+            == 0
+        )
+        assert "already submitted" in capsys.readouterr().out
+
+    def test_missing_token_explains_the_setup(self, api, photometry, capsys):
+        assert (
+            load("submit_observation_report").main("MYOBS", "GRB 251020A", photometry)
+            == 1
+        )
+        assert "ASTROCOLIBRI_API_TOKEN" in capsys.readouterr().out
+        api.request.assert_not_called()
+
+    def test_not_a_member(self, api, token, photometry, capsys):
+        api.request.return_value = make_response(
+            403,
+            {
+                "message": "you are not a member of this observatory",
+                "status_code": "403",
+            },
+        )
+        assert (
+            load("submit_observation_report").main("MYOBS", "GRB 251020A", photometry)
+            == 1
+        )
+        assert "not a member" in capsys.readouterr().out

@@ -134,6 +134,10 @@ FULL_EVENT: Dict[str, Any] = {
     "gw_hasNS": 0.6,
     "gw_hasSSM": 0.01,
     "gw_pipeline": "pycbc",
+    "gw_mchirp": {
+        "bin_edges": [0.1, 0.87, 1.0, 3.0, 5.5, 1000.0],
+        "probabilities": [0.0, 0.0, 0.0124, 0.9876, 0.0],
+    },
     "gw_contours": {"90": [[187.0, 12.0], [188.0, 13.0]]},
     "map_areas": {"50": 12.5, "90": 46.0},
     "alert_type": "classification",
@@ -153,6 +157,7 @@ FULL_EVENT: Dict[str, Any] = {
     "significance": 7.5,
     "confidential_observatory": "",
     "ivorn_history": ["ivo://tns/2025mq#1", "ivo://tns/2025mq#2"],
+    "internal_names": ["ZTF25aaxyzab", "LSST-AP-DO-171189567841894451"],
     "event_display_url": "https://example.org/display.png",
     "event_url": "https://example.org/event",
     "unistellar_deeplink": "unistellar://target?ra=187.7&dec=12.4",

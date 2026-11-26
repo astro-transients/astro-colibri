@@ -20,8 +20,9 @@ from .helpers import FAKE_UID, NO_BODY, make_response
 
 @pytest.fixture(autouse=True)
 def _isolate_uid_env(monkeypatch):
-    """A real ASTROCOLIBRI_UID in the developer's shell must not leak into tests."""
+    """A real ASTROCOLIBRI_UID or API token in the developer's shell must not leak into tests."""
     monkeypatch.delenv("ASTROCOLIBRI_UID", raising=False)
+    monkeypatch.delenv("ASTROCOLIBRI_API_TOKEN", raising=False)
 
 
 @pytest.fixture

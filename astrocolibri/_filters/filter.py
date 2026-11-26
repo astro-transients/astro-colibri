@@ -38,6 +38,18 @@ class BaseFilter(ABC):
         self.activated = activated
         self.default_state = default_state
 
+    def is_filtering(self):
+        """Tell whether the filter is switched on, i.e. takes part in a decision.
+
+        Mirrors `isFiltering()` of the Dart specifications; an OrFilter with
+        `sub_filter_activation_required` only evaluates sub-filters for which
+        this is true.
+
+        Returns:
+            bool: True if the filter is switched on.
+        """
+        return self.activated
+
     @abstractmethod
     def apply_filter(self, event):
         """Apply the filter to an event.
@@ -270,6 +282,12 @@ class AndFilter(BaseFilter):
         if len(self.sub_filters) < 1:
             raise EmptyFilterList("AndSpecification")
 
+    def is_filtering(self):
+        """An AND group is switched on when it and all of its sub-filters are."""
+        return self.activated and all(
+            sub_filter.is_filtering() for sub_filter in self.sub_filters
+        )
+
     def apply_filter(self, event):
         """Apply the AND filter to an event.
 
@@ -336,6 +354,9 @@ class OrFilter(BaseFilter):
         activated (bool): A boolean value indicating whether the filter is active.
         default_state (bool): The boolean value which is returned when the filter is deactivated
         sub_filters (list): A list of BaseFilter to be combined with OR.
+        sub_filter_activation_required (bool): When True, only the sub-filters
+            that are switched on are evaluated, and the filter returns
+            default_state when none of them is.
 
     Methods:
         apply_filter(event): Apply the OR filter to an event.
@@ -343,19 +364,34 @@ class OrFilter(BaseFilter):
         generate_dict(): Generate a dictionary representation of the OrFilter.
     """
 
-    def __init__(self, activated, sub_filters, default_state=False):
+    def __init__(
+        self,
+        activated,
+        sub_filters,
+        default_state=False,
+        sub_filter_activation_required=False,
+    ):
         """Initialize an OrFilter with the specified activation status and sub-filters.
 
         Args:
             activated (bool): A boolean value indicating whether the filter is active.
             default_state (bool): The boolean value which is returned when the filter is deactivated
             sub_filters (list): A list of BaseFilter to be combined with OR.
+            sub_filter_activation_required (bool): Evaluate only the sub-filters
+                that are switched on (`subFilterActivationRequired` in the JSON).
         """
         super().__init__(activated, default_state)
         self.sub_filters = sub_filters
+        self.sub_filter_activation_required = bool(sub_filter_activation_required)
 
         if len(self.sub_filters) < 1:
             raise EmptyFilterList("OrSpecification")
+
+    def is_filtering(self):
+        """An OR group is switched on when it and at least one sub-filter are."""
+        return self.activated and any(
+            sub_filter.activated for sub_filter in self.sub_filters
+        )
 
     def apply_filter(self, event):
         """Apply the OR filter to an event.
@@ -369,11 +405,22 @@ class OrFilter(BaseFilter):
         if not self.activated:
             return self.default_state
 
+        sub_filters = self.sub_filters
+        if self.sub_filter_activation_required:
+            # Only the sub-filters that are switched on take part. A switched-off
+            # sub-filter answers with its own default_state, which in an OR would
+            # let every event through as soon as one of them is off (a magnitude
+            # limit on a single photometric band would never filter anything).
+            # Keep in step with OrSpecification.isSatisfied in the Flutter app.
+            sub_filters = [f for f in self.sub_filters if f.is_filtering()]
+            if not sub_filters:
+                return self.default_state
+
         results = False
-        for i in range(len(self.sub_filters)):
+        for i in range(len(sub_filters)):
             if results:
                 break
-            results |= self.sub_filters[i].apply_filter(event)
+            results |= sub_filters[i].apply_filter(event)
         return results
 
     @staticmethod
@@ -400,6 +447,9 @@ class OrFilter(BaseFilter):
             sub_filters=[
                 BaseFilter.create_from_dict(spec) for spec in base_dict_filter["specs"]
             ],
+            sub_filter_activation_required=base_dict_filter.get(
+                "subFilterActivationRequired", False
+            ),
         )
 
     def generate_dict(self):
@@ -408,12 +458,15 @@ class OrFilter(BaseFilter):
         Returns:
             dict: A dictionary representation of the OrFilter.
         """
-        return {
+        filter_dict = {
             "type": "OrSpecification",
             "isActivated": self.activated,
             "default_state": self.default_state,
             "specs": [sub_filter.generate_dict() for sub_filter in self.sub_filters],
         }
+        if self.sub_filter_activation_required:
+            filter_dict["subFilterActivationRequired"] = True
+        return filter_dict
 
 
 class NotFilter(BaseFilter):
@@ -440,6 +493,10 @@ class NotFilter(BaseFilter):
         """
         super().__init__(activated, default_state)
         self.sub_filter = sub_filter
+
+    def is_filtering(self):
+        """A NOT filter is switched on when it and the filter it negates are."""
+        return self.activated and self.sub_filter.is_filtering()
 
     def apply_filter(self, event):
         """Apply the NOT filter to an event.

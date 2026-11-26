@@ -42,9 +42,10 @@ def _format_for_topic(topic: Optional[str]) -> Optional[str]:
         return FORMAT_VOEVENT
     if topic.endswith(".JSON"):
         return FORMAT_JSON
-    # `heartbeat` and the internal `test` topic sit outside the
-    # `<stream>.<format>` convention and are JSON.
-    if topic in ("astrocolibri.heartbeat", "heartbeat", "test"):
+    # `heartbeat` sits outside the `<stream>.<format>` convention and is
+    # JSON. The broker's internal test stream follows the convention
+    # (`test.JSON`, `test.VOEvent`) and is covered by the suffixes above.
+    if topic in ("astrocolibri.heartbeat", "heartbeat"):
         return FORMAT_JSON
     return None
 

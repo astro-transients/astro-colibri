@@ -127,10 +127,19 @@ class TestFormatDetection:
             == FORMAT_VOEVENT
         )
 
+    def test_format_announced_by_the_internal_test_stream(self):
+        # The broker's test stream mirrors the public naming, so its two
+        # topics announce their format like any other.
+        assert Alert(make_message(topic="test.JSON")).format == FORMAT_JSON
+        assert (
+            Alert(make_message(value=VOEVENT_XML.encode(), topic="test.VOEvent")).format
+            == FORMAT_VOEVENT
+        )
+
     def test_format_sniffed_when_topic_does_not_announce_one(self):
-        # The internal `test` topic and any future topic outside the
-        # <stream>.<format> convention still have to decode correctly.
-        assert Alert(make_message(topic="test")).format == FORMAT_JSON
+        # Any topic outside the <stream>.<format> convention still has to
+        # decode correctly.
+        assert Alert(make_message(topic="odd")).format == FORMAT_JSON
         assert (
             Alert(make_message(value=VOEVENT_XML.encode(), topic="odd")).format
             == FORMAT_VOEVENT

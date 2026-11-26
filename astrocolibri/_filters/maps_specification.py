@@ -193,6 +193,17 @@ def _retrieve_json_path(current: Any, keys: List[str]) -> Any:
 
     key, *remaining = keys
 
+    # ---------- JSON text --------------
+    # Some nested fields (broker_attributes, map_areas, ...) are stored as JSON
+    # text in MongoDB and in the broker payload. Decode such a string when the
+    # path still has keys to follow, so "broker_attributes.scores.sn_like"
+    # resolves the same way on a stored row as on a decoded event.
+    if isinstance(current, str) and current[:1] in ("{", "["):
+        try:
+            current = json.loads(current)
+        except ValueError:
+            return None
+
     # ---------- Value-fallback ---------
     # this is only useful in the frontend case,
     # where a value is the key for all the parameters included "photometry"

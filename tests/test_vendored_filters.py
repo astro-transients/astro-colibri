@@ -108,6 +108,42 @@ class TestEngineSemantics:
         assert not evaluate(spec, faint)
         assert not evaluate(spec, {"photometry": {}})
 
+    def test_photometry_band_group_counts_only_switched_on_bands(self):
+        # The app's "Latest ... [mag]" group: one limit per band, any of them.
+        def band(name, activated, value):
+            return field(
+                f"photometry.{name}.last.mag",
+                "<=",
+                value,
+                "maps_float",
+                isActivated=activated,
+                defaultState=True,
+            )
+
+        def group(*bands):
+            return {
+                "type": "OrSpecification",
+                "subFilterActivationRequired": True,
+                "defaultState": True,
+                "specs": list(bands),
+            }
+
+        event = {
+            "photometry": {
+                "ztf_g": {"last": {"mag": 20.0}},
+                "lsst_r": {"last": {"mag": 21.5}},
+            }
+        }
+        only_ztf = group(band("ztf_g", True, "18"), band("lsst_r", False, "22"))
+        only_lsst = group(band("ztf_g", False, "18"), band("lsst_r", True, "22"))
+        none = group(band("ztf_g", False, "18"), band("lsst_r", False, "22"))
+        assert not evaluate(only_ztf, event)
+        assert evaluate(only_lsst, event)
+        assert evaluate(none, event)
+        # Without the flag a switched-off band answers with its defaultState.
+        del only_ztf["subFilterActivationRequired"]
+        assert evaluate(only_ztf, event)
+
     def test_contains_and_array(self):
         contains = {
             "type": "ContainsSpecification",

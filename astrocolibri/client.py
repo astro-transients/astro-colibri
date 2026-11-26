@@ -3,11 +3,11 @@ astrocolibri/client.py
 
 Astro-Colibri API client.
 
-A synchronous, read-only wrapper around the public Astro-COLIBRI API at
-https://astro-colibri.science. It looks up events and sources, and searches
-for transients by time window or around a position. Results are the API's
-own JSON as plain Python objects: unknown fields are preserved and nothing
-is reshaped.
+A synchronous wrapper around the public Astro-COLIBRI API at
+https://astro-colibri.science. It looks up events and sources, searches for
+transients by time window or around a position, and submits observation
+reports for your observatory. Results are the API's own JSON as plain Python
+objects: unknown fields are preserved and nothing is reshaped.
 
 The client never retries a request on its own. A search can consume your
 daily quota or start expensive processing on the server, so repeating one
@@ -47,11 +47,17 @@ from .exceptions import (
 #: Environment variable holding the user ID when ``uid`` is not passed.
 UID_ENV_VAR = "ASTROCOLIBRI_UID"
 
+#: Environment variable holding the personal API token when ``token`` is not passed.
+TOKEN_ENV_VAR = "ASTROCOLIBRI_API_TOKEN"
+
 #: Heavy event fields the API leaves out unless they are requested.
 OPTIONAL_PARAMETERS = ("gw_contours", "archive")
 
 # Where users find their user ID; linked from every UID-related error.
 _ACCOUNT_URL = "https://astro-colibri.com/account"
+
+# Where observatory members create their API token on that page.
+_TOKEN_LOCATION = "Observatory & TOM access > Community observatories"
 
 # Sent when no filter is given: every event the account may access. Sending
 # it explicitly, instead of leaving the filter out, keeps the request
@@ -117,8 +123,15 @@ class Client:
             for transient in results["voevents"]:
                 print(transient.get("source_name"), transient.get("type"))
 
-    The user ID lives only in memory: it is never written to disk, never
-    shown by ``repr()``, and replaced by ``<uid>`` in every error message.
+    Submitting observation reports (:meth:`submit_observation_report`)
+    needs your personal API token instead. Members of an observatory create
+    it in the app at https://astro-colibri.com/account, under *Observatory &
+    TOM access* > *Community observatories*. Export it as
+    ``ASTROCOLIBRI_API_TOKEN`` or pass ``Client(token=...)``.
+
+    The user ID and the token live only in memory: they are never written to
+    disk, never shown by ``repr()``, and replaced by ``<uid>`` and
+    ``<token>`` in every error message.
 
     A ``Client`` holds a :class:`requests.Session`, which is not thread-safe.
     Use one ``Client`` per thread.
@@ -134,6 +147,7 @@ class Client:
         self,
         uid: Optional[str] = None,
         *,
+        token: Optional[str] = None,
         timeout: float = DEFAULT_TIMEOUT,
         session: Optional[requests.Session] = None,
     ) -> None:
@@ -153,6 +167,11 @@ class Client:
                 - Given: takes precedence over the environment variable. An
                   empty string is rejected, since it is almost always a
                   configuration mistake.
+            token:
+                Your personal API token, needed only to submit observation
+                reports. Read from ``ASTROCOLIBRI_API_TOKEN`` when omitted,
+                with the same rules as ``uid``. It is sent only in the
+                ``Authorization`` header of the requests that need it.
             timeout:
                 Seconds a request may take before it is abandoned. Every
                 method also accepts its own ``timeout``.
@@ -164,8 +183,8 @@ class Client:
                 closed by :meth:`close`: it belongs to you.
 
         Raises:
-            AstrocolibriConfigError: If ``uid`` is given but empty or not a
-                string, or ``timeout`` is not a positive number.
+            AstrocolibriConfigError: If ``uid`` or ``token`` is given but
+                empty or not a string, or ``timeout`` is not a positive number.
 
         Example::
 
@@ -173,6 +192,7 @@ class Client:
             client = Client(uid=my_uid)       # explicit, wins over the variable
         """
         self._uid = _resolve_uid(uid)
+        self._token = _resolve_token(token)
         self._timeout = _positive_timeout(timeout)
         self._owns_session = session is None
         self._session = requests.Session() if session is None else session
@@ -181,6 +201,11 @@ class Client:
     def has_uid(self) -> bool:
         """Whether a user ID is configured, without revealing it."""
         return self._uid is not None
+
+    @property
+    def has_token(self) -> bool:
+        """Whether an API token is configured, without revealing it."""
+        return self._token is not None
 
     # ── Events ───────────────────────────────────────────────────────────────
 
@@ -761,6 +786,167 @@ class Client:
             raise self._malformed("/saved_filters", payload)
         return spec
 
+    # ── Observation reports ──────────────────────────────────────────────────
+
+    def submit_observation_report(
+        self,
+        observatory: str,
+        *,
+        trigger_id: Optional[str] = None,
+        source_name: Optional[str] = None,
+        observations: Optional[Sequence[Dict[str, Any]]] = None,
+        redshift: Optional[float] = None,
+        comments: Optional[str] = None,
+        observation_category: str = "general_report",
+        contact_name: Optional[str] = None,
+        contact_email: Optional[str] = None,
+        update_figure: bool = False,
+        timeout: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """
+        Submit an observation report for an event on behalf of your observatory.
+
+        Does what the report form in the app does: the report appears with the
+        event's follow-up information, the observatory is added to the event,
+        and the observatory's members are notified. Needs your personal API
+        token, and you must be a member of ``observatory``. It does not count
+        against the search quota.
+
+        The event must already exist in Astro-COLIBRI. Its stored event time
+        and Galactic extinction are used to compute the time since trigger and
+        the corrected photometry. Submitting the same content again stores
+        nothing new: the result then has ``status`` ``"unchanged"``, so a
+        failed request can safely be repeated.
+
+        Args:
+            observatory:
+                Short name of your observatory, for example ``"MYOBS"``.
+            trigger_id:
+                Trigger ID of the event. Give this, ``source_name``, or both.
+            source_name:
+                Name of the event, for example ``"GRB 251020A"``.
+            observations:
+                Up to 1000 measurements, each a dictionary such as::
+
+                    {"observation_type": "detection",   # or "upper_limit"
+                     "filter": "r",
+                     "magnitude": 18.2, "magnitude_error": 0.1,
+                     "time_utc_mid": "2025-10-20T21:14:05Z"}
+
+                The accepted fields are listed at
+                https://astro-colibri.science/apidoc (``/observation_report``);
+                the API rejects any other field.
+            redshift:
+                Measured redshift.
+            comments:
+                Free-text summary of the observation.
+            observation_category:
+                Category of the report, for example ``"photometric"``.
+            contact_name, contact_email:
+                Who to contact about the report. Default to the name and
+                email of your account.
+            update_figure:
+                Redraw the event's optical afterglow figure with the new data
+                (GRBs and other bursts with optical photometry only).
+            timeout:
+                Seconds before the request is abandoned. Defaults to the
+                client's timeout.
+
+        Returns:
+            The API's answer: ``report_id``, ``trigger_id``, ``source_name``,
+            ``status`` (``"created"``, ``"updated"`` or ``"unchanged"``) and
+            ``observations``, plus ``img_url`` or ``plot_message`` when
+            ``update_figure`` was set.
+
+        Raises:
+            AstrocolibriConfigError: If an argument is invalid. Nothing is
+                sent then.
+            AstrocolibriAuthError: If no token is configured, the API does not
+                accept it, or you are not a member of the observatory.
+            AstrocolibriNotFoundError: If the observatory or the event is
+                unknown.
+            AstrocolibriAPIError: If the API rejects the report (the message
+                names the offending field) or fails otherwise.
+            AstrocolibriTransportError: If the API cannot be reached.
+
+        Example::
+
+            client = Client()                 # reads ASTROCOLIBRI_API_TOKEN
+            result = client.submit_observation_report(
+                "MYOBS",
+                source_name="GRB 251020A",
+                observations=[{
+                    "observation_type": "detection",
+                    "filter": "r",
+                    "magnitude": 18.2,
+                    "magnitude_error": 0.1,
+                    "time_utc_mid": "2025-10-20T21:14:05Z",
+                }],
+                comments="Optical counterpart detected.",
+            )
+            print(result["report_id"], result["status"])
+        """
+        token = self._require_token("submit_observation_report()")
+        body: Dict[str, Any] = {
+            "observatory": _required_text(observatory, "observatory").upper(),
+            "observation_category": _required_text(
+                observation_category, "observation_category"
+            ),
+            "update_figure": _flag(update_figure, "update_figure"),
+        }
+        for key, value in (("trigger_id", trigger_id), ("source_name", source_name)):
+            if value is not None:
+                body[key] = _required_text(value, key)
+        if "trigger_id" not in body and "source_name" not in body:
+            raise AstrocolibriConfigError(
+                "Name the event: pass trigger_id, source_name, or both."
+            )
+        if observations is not None:
+            body["observations"] = _observations(observations)
+        if redshift is not None:
+            if (
+                isinstance(redshift, bool)
+                or not isinstance(redshift, numbers.Real)
+                or not math.isfinite(redshift)
+                or redshift < 0
+            ):
+                raise AstrocolibriConfigError(
+                    f"redshift must be a non-negative number, got {redshift!r}."
+                )
+            body["redshift"] = float(redshift)
+        if comments is not None:
+            if not isinstance(comments, str):
+                raise AstrocolibriConfigError(
+                    f"comments must be a string, got {type(comments).__name__}."
+                )
+            body["comments"] = comments
+        if (
+            not body.get("observations")
+            and "redshift" not in body
+            and not (comments or "").strip()
+        ):
+            raise AstrocolibriConfigError(
+                "A report needs observations, a redshift or comments."
+            )
+        contact = {
+            key: _required_text(value, f"contact_{key}")
+            for key, value in (("name", contact_name), ("email", contact_email))
+            if value is not None
+        }
+        if contact:
+            body["contact"] = contact
+
+        payload = self._request_json(
+            "POST",
+            "/observation_report",
+            json_body=body,
+            timeout=timeout,
+            token=token,
+        )
+        if not isinstance(payload, dict) or "report_id" not in payload:
+            raise self._malformed("/observation_report", payload)
+        return payload
+
     # ── Lifecycle ────────────────────────────────────────────────────────────
 
     def close(self) -> None:
@@ -781,8 +967,9 @@ class Client:
         return False
 
     def __repr__(self) -> str:
-        state = "set" if self._uid is not None else "unset"
-        return f"<Client uid={state} timeout={self._timeout:g}s>"
+        uid = "set" if self._uid is not None else "unset"
+        token = "set" if self._token is not None else "unset"
+        return f"<Client uid={uid} token={token} timeout={self._timeout:g}s>"
 
     # ── Request building ─────────────────────────────────────────────────────
 
@@ -911,6 +1098,15 @@ class Client:
             )
         return self._uid
 
+    def _require_token(self, purpose: str) -> str:
+        if self._token is None:
+            raise AstrocolibriAuthError(
+                f"{purpose} needs your personal API token. Create it in the app "
+                f"at {_ACCOUNT_URL}, under {_TOKEN_LOCATION}, then pass "
+                f"Client(token=...) or set the {TOKEN_ENV_VAR} environment variable."
+            )
+        return self._token
+
     # ── Transport ────────────────────────────────────────────────────────────
 
     def _request_json(
@@ -922,6 +1118,7 @@ class Client:
         json_body: Optional[Dict[str, Any]] = None,
         timeout: Optional[float] = None,
         not_found: Optional[str] = None,
+        token: Optional[str] = None,
     ) -> Any:
         response = self._send(
             method,
@@ -930,9 +1127,12 @@ class Client:
             json_body=json_body,
             timeout=timeout,
             accept="application/json",
+            token=token,
         )
         payload = _decode_json(response)
-        self._raise_for_error(response, payload, path, not_found=not_found)
+        self._raise_for_error(
+            response, payload, path, not_found=not_found, token_auth=token is not None
+        )
         if payload is _NOT_JSON:
             raise self._malformed(path, response.text)
         return payload
@@ -970,12 +1170,15 @@ class Client:
         json_body: Optional[Dict[str, Any]],
         timeout: Optional[float],
         accept: str,
+        token: Optional[str] = None,
     ) -> requests.Response:
         seconds = self._timeout if timeout is None else _positive_timeout(timeout)
         headers = {
             "User-Agent": f"astro-colibri-python/{__version__}",
             "Accept": accept,
         }
+        if token is not None:
+            headers["Authorization"] = f"Bearer {token}"
         try:
             return self._session.request(
                 method,
@@ -1004,6 +1207,7 @@ class Client:
         path: str,
         *,
         not_found: Optional[str] = None,
+        token_auth: bool = False,
     ) -> None:
         status = response.status_code
         message: Optional[str] = None
@@ -1026,6 +1230,14 @@ class Client:
             )
         message = self._scrub(message)
 
+        if token_auth and status == 401:
+            raise AstrocolibriAuthError(
+                f"{path}: {_sentence(message)} The API does not accept the "
+                f"configured API token: create a new one in the app at "
+                f"{_ACCOUNT_URL}, under {_TOKEN_LOCATION}."
+            )
+        if token_auth and status == 403:
+            raise AstrocolibriAuthError(f"{path}: {_sentence(message)}")
         if status == 401:
             if self._uid is None:
                 hint = (
@@ -1059,8 +1271,10 @@ class Client:
         )
 
     def _scrub(self, text: Any) -> str:
-        """``text`` with every form of the user ID replaced by ``<uid>``."""
+        """``text`` with the token and every form of the user ID replaced."""
         text = "" if text is None else str(text)
+        if self._token:
+            text = text.replace(self._token, "<token>")
         if self._uid:
             # requests form-encodes query strings (a space becomes "+"); other
             # layers percent-encode. Cover the raw ID and both encodings.
@@ -1074,6 +1288,23 @@ class Client:
 
 
 # ── Argument validation ──────────────────────────────────────────────────────
+
+
+def _resolve_token(token: Optional[str]) -> Optional[str]:
+    if token is not None:
+        if not isinstance(token, str):
+            raise AstrocolibriConfigError(
+                f"token must be a string, got {type(token).__name__}."
+            )
+        stripped = token.strip()
+        if not stripped:
+            raise AstrocolibriConfigError(
+                f"token was given but is empty. Pass your personal API token "
+                f"(created in the app at {_ACCOUNT_URL}), or leave token out to "
+                f"read it from {TOKEN_ENV_VAR}."
+            )
+        return stripped
+    return os.environ.get(TOKEN_ENV_VAR, "").strip() or None
 
 
 def _resolve_uid(uid: Optional[str]) -> Optional[str]:
@@ -1159,6 +1390,25 @@ def _flag(value: Any, name: str) -> bool:
     if not isinstance(value, bool):
         raise AstrocolibriConfigError(f"{name} must be True or False, got {value!r}.")
     return value
+
+
+def _observations(values: Any) -> List[Dict[str, Any]]:
+    if isinstance(values, (str, bytes, dict)):
+        raise AstrocolibriConfigError(
+            "observations must be a list of dictionaries, one per measurement."
+        )
+    try:
+        items = list(values)
+    except TypeError:
+        raise AstrocolibriConfigError(
+            f"observations must be a list of dictionaries, got {type(values).__name__}."
+        ) from None
+    for index, item in enumerate(items):
+        if not isinstance(item, dict):
+            raise AstrocolibriConfigError(
+                f"observations[{index}] must be a dictionary, got {type(item).__name__}."
+            )
+    return [dict(item) for item in items]
 
 
 def _contour_margin(value: Any) -> float:

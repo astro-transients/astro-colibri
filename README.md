@@ -6,7 +6,7 @@ the SDK for **Astro-COLIBRI**. It has two parts:
 | | What it does | You need |
 |---|---|---|
 | `Consumer` | Receives multi-messenger alerts in real time, as JSON or VOEvent/XML, from the Astro-COLIBRI broker | Broker credentials from [astro-colibri.com/broker](https://astro-colibri.com/broker) |
-| `Client` | Queries the Astro-COLIBRI API: looks up events and sources, and searches for transients by time window or around a sky position | Your user ID from [astro-colibri.com/account](https://astro-colibri.com/account) (lookups work without one) |
+| `Client` | Queries the Astro-COLIBRI API: looks up events and sources, searches for transients by time window or around a sky position, and submits observation reports for your observatory | Your user ID from [astro-colibri.com/account](https://astro-colibri.com/account) (lookups work without one); a personal API token to submit reports |
 | `EventFilter` | Applies your Astro-COLIBRI filters (saved in the app, downloaded as a file, or written as a dictionary) to the alert stream and to search results | Your user ID, for the filters saved in the app |
 
 Full documentation, with tutorials, is at
@@ -156,6 +156,13 @@ for alert in consumer.consume():
     else:
         print(alert.value())            # XML, as text
 ```
+
+URLs inside the payload are not permanent. `lc_url` (the optical lightcurve
+figure; its CSV and VOTable sit next to it under `archive/` with the extension
+replaced) carries the build date in its name and changes whenever the
+lightcurve is rebuilt, and superseded files may be removed later.
+Fetch what you need when the alert arrives, or re-read the event through the
+API, rather than storing the URL.
 
 Everything else about the record stays available:
 
@@ -342,6 +349,7 @@ Each script is a complete, runnable program:
 | [`examples/cone_search.py`](examples/cone_search.py) | Searching around a position written in sexagesimal notation | User ID |
 | [`examples/contour_search.py`](examples/contour_search.py) | Searching inside a gravitational-wave localization contour | User ID |
 | [`examples/parse_voevent.py`](examples/parse_voevent.py) | Parsing an event's VOEvent, or any VOEvent XML file such as a GCN notice | Nothing |
+| [`examples/submit_observation_report.py`](examples/submit_observation_report.py) | Submitting photometry from a CSV file as an observation report | API token, observatory membership |
 
 ```bash
 python example.py
@@ -510,6 +518,48 @@ results = client.latest_transients(start=start, end=end, use_saved_filters=True)
 dictionary, and an [`EventFilter`](#filtering-the-stream) applies any of them
 to the broker stream.
 
+### Submitting observation reports
+
+Members of an observatory registered in Astro-COLIBRI can submit observation
+reports from their own scripts and pipelines, exactly like the report form in
+the app. Create your personal API token in the app at
+[astro-colibri.com/account](https://astro-colibri.com/account), under
+*Observatory & TOM access* > *Community observatories* (the button appears once
+you have joined an observatory). It is shown only once, and creating a new one
+revokes the old one. Keep it out of your code:
+
+```bash
+export ASTROCOLIBRI_API_TOKEN="colibri_..."
+```
+
+```python
+from astrocolibri import Client
+
+with Client() as client:                     # reads ASTROCOLIBRI_API_TOKEN
+    result = client.submit_observation_report(
+        "MYOBS",                             # your observatory's short name
+        source_name="GRB 251020A",           # or trigger_id=...
+        observations=[
+            {"observation_type": "detection", "filter": "r",
+             "magnitude": 18.21, "magnitude_error": 0.05,
+             "time_utc_mid": "2025-10-20T21:14:05Z"},
+            {"observation_type": "upper_limit", "filter": "g",
+             "magnitude": 20.5, "time_utc_mid": "2025-10-20T21:20:00Z"},
+        ],
+        comments="Optical counterpart detected.",
+    )
+print(result["report_id"], result["status"])
+```
+
+The event must already exist in Astro-COLIBRI; its stored event time and
+Galactic extinction are used for the time since trigger and the corrected
+photometry. The report appears on the event in the app and your observatory's
+members are notified. Submitting the same content again stores nothing new
+(`status` is `"unchanged"`), so a failed submission can safely be repeated.
+The accepted observation fields are listed in the
+[API documentation](https://astro-colibri.science/apidoc) under
+`/observation_report`. Submissions do not count against the search quota.
+
 ### Your quota
 
 Searches count against a daily per-account quota (100 requests at the time of
@@ -535,7 +585,7 @@ votable = client.cone_search(..., return_format="votable")   # VOTable XML
 | Exception | When |
 |---|---|
 | `AstrocolibriConfigError` | An argument is invalid. Raised before anything is sent, so it costs no quota |
-| `AstrocolibriAuthError` | A search without a user ID, or with one the API does not recognize |
+| `AstrocolibriAuthError` | A search without a user ID, or with one the API does not recognize; a report submission without a valid API token, or for an observatory you are not a member of |
 | `AstrocolibriNotFoundError` | No event matches the identifier, or no filters are saved in the app for your account |
 | `AstrocolibriRateLimitError` | The daily search quota is used up; see `reset_time` |
 | `AstrocolibriAPIError` | The API rejected or failed the request; see `status_code` and `message` |
@@ -613,6 +663,7 @@ Cleanly closes the connection (called automatically by the context manager).
 Client(
     uid: str | None = None,          # default: the ASTROCOLIBRI_UID variable
     *,
+    token: str | None = None,        # default: the ASTROCOLIBRI_API_TOKEN variable
     timeout: float = 30.0,           # seconds per request
     session: requests.Session | None = None,
 )
@@ -630,6 +681,7 @@ Client(
 | `latest_transients(*, start, end, event_filter=None, use_saved_filters=False, optional_parameters=(), include_watchlist=False, return_format="json")` | results `dict`, or `str` for `"votable"` and `"url"` | counts |
 | `cone_search(*, ra, dec, radius, start, end, contour_trigger_id=None, contour_margin=None, event_filter=None, use_saved_filters=False, optional_parameters=(), include_watchlist=False, return_format="json")` | results `dict`, or `str` for `"votable"` and `"url"` | counts |
 | `get_saved_filters()` | the filters saved in the app, as a filter `dict` | counts |
+| `submit_observation_report(observatory, *, trigger_id=None, source_name=None, observations=None, redshift=None, comments=None, observation_category="general_report", contact_name=None, contact_email=None, update_figure=False)` | the API's answer, with `report_id` and `status` | free, needs the API token |
 | `close()` | | |
 
 Every method also accepts `timeout=`. `Client` is a context manager. Like the

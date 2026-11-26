@@ -74,10 +74,11 @@ class TestTopics:
         assert len(astrocolibri.TOPICS) == len(set(astrocolibri.TOPICS))
 
     def test_broker_test_topic_is_not_a_public_stream(self):
-        # The broker routes test traffic to a dedicated "test" topic, kept
-        # outside the astrocolibri.* namespace. It must never be advertised
-        # here, or ordinary users would consume test events as real alerts.
-        assert "test" not in astrocolibri.TOPICS
+        # The broker routes test traffic to a dedicated test stream
+        # (test.JSON, test.VOEvent), kept outside the astrocolibri.*
+        # namespace. It must never be advertised here, or ordinary users
+        # would consume test events as real alerts.
+        assert not any(t.startswith("test") for t in astrocolibri.TOPICS)
         assert all(t.startswith("astrocolibri.") for t in astrocolibri.TOPICS)
 
 
